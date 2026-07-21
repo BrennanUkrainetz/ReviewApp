@@ -76,43 +76,21 @@ items are the Floor, the minimum that still keeps a streak alive on a bad day.
 
 `src/config/tuning.ts` holds every payout, chance, and interval in the game.
 
-## Dependency policy: a 30-day cooling-off window
+## Dependencies
 
-`.npmrc` sets `before=<a date 30 days ago>`, so npm refuses any package version
-published in the last 30 days — direct and transitive alike. Hijacked releases
-are usually caught and pulled within hours or days, and nothing here needs a
-day-old dependency.
+Every dependency is pinned to an **exact version** — no carets, no ranges.
+`.npmrc` sets `save-exact=true`, so `npm install <pkg>` keeps it that way. An
+identical package.json therefore resolves to an identical tree on any machine,
+and a dependency only moves when someone deliberately moves it.
 
 ```bash
-npm run deps:window     # move the window forward to today minus 30 days
-npm update              # then update within the new window
+npm outdated            # what has moved on
+npm update              # respects the exact pins; use npm install <pkg>@latest to bump
+npm audit               # currently clean
 ```
 
-Things worth knowing:
-
-- **Letting the window go stale is safe.** It only ever widens, so packages get
-  older, never fresher. The refresh script refuses to move it backwards.
-- **The guard is airtight.** `overrides` can't pull a newer version through it;
-  the install just fails. To take an urgent patch before it ages in, pass a
-  one-off window explicitly: `npm install --before=$(date -u +%Y-%m-%d)`.
-- **The cost is delayed security patches.** A fix published today is refused for
-  30 days, the same as any other release. Today that means one known dev-only
-  advisory sitting unpatched (see below).
-- **`save-exact` is on**, so package.json pins exact versions and a caret range
-  can't drift into a fresh release on another machine.
-- On **npm >= 12** this policy has a rolling form that needs no refreshing —
-  `min-release-age=30`. It isn't used here because npm 12 requires Node >= 24.15
-  and this project runs on 24.14; npm 11 ignores the setting with a warning,
-  which would be silent false security. Once Node is new enough, swap the
-  `before` line for `min-release-age=30` and delete the refresh script.
-
-### Known accepted advisory
-
-`brace-expansion@5.0.6` (eslint → minimatch → brace-expansion) has a
-high-severity ReDoS advisory. The fix, 5.0.7, was published inside the window
-and ages in on 2026-07-29. It is a dev-only dependency and the glob patterns it
-expands come from this repo's own ESLint config, never from untrusted input, so
-it's accepted rather than force-installed.
+Updating is a deliberate, reviewable act: bump the pin, run `npm run check`,
+commit the lockfile change with it.
 
 ## Data & privacy
 

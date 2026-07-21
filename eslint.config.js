@@ -25,12 +25,4 @@ export default tseslint.config(
     files: ['**/*.test.ts'],
     rules: { 'no-console': 'off' },
   },
-  {
-    // Maintenance scripts run in Node and talk to the operator on stdout.
-    files: ['scripts/**/*.mjs'],
-    languageOptions: {
-      globals: { ...globals.node },
-    },
-    rules: { 'no-console': 'off' },
-  },
 );
