@@ -1,1 +1,370 @@
-/* chest — filled in by a later build phase. */
+/*
+ * Chest reveal and the milestone screen.
+ *
+ * Chest tier is expressed only through colour and the size of the burst — no
+ * new mechanics, no new layout, so a rare chest reads as rare instantly.
+ */
+
+.reward {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--dusk-deep) 78%, transparent);
+  backdrop-filter: blur(6px);
+  animation: reward-in var(--duration-base) var(--ease-out-soft);
+}
+
+@keyframes reward-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.reward__panel {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* Chest tiers */
+.chest {
+  --chest-body: #4a3c52;
+  --chest-trim: #8fd8d2;
+  --chest-edge: #2a2436;
+  --chest-beam: #b9e6e1;
+  --chest-aura: color-mix(in srgb, var(--mist) 40%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.reward[data-kind='small-milestone'] .chest {
+  --chest-body: #5b4636;
+  --chest-trim: #f5a94e;
+  --chest-beam: #ffe0a8;
+  --chest-aura: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+.reward[data-kind='big-milestone'] .chest {
+  --chest-body: #6b4a2e;
+  --chest-trim: #ffd9a0;
+  --chest-beam: #fff3d6;
+  --chest-aura: color-mix(in srgb, #ffd9a0 60%, transparent);
+}
+
+.chest__eyebrow {
+  color: var(--color-text-muted);
+}
+
+.chest__button {
+  display: block;
+  width: min(260px, 70vw);
+  border-radius: var(--radius-lg);
+  transition: transform var(--duration-fast) var(--ease-out-soft);
+}
+
+.chest__button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.chest__button:disabled {
+  cursor: default;
+}
+
+.chest__art {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 18px 30px rgb(4 12 28 / 55%));
+}
+
+.chest__hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  animation: hint-pulse 2.4s var(--ease-in-out-soft) infinite;
+}
+
+@keyframes hint-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Light escaping the lid, hidden until the crack opens. */
+.chest__light {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.chest__lid {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+}
+
+.chest__sparks {
+  opacity: 0;
+}
+
+.chest__spark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* 1 — anticipation */
+.chest--shaking .chest__art {
+  animation: chest-shake 0.9s var(--ease-in-out-soft);
+}
+
+@keyframes chest-shake {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  15% {
+    transform: rotate(-2.5deg) translateY(-2px);
+  }
+  30% {
+    transform: rotate(2.5deg);
+  }
+  45% {
+    transform: rotate(-3deg) translateY(-4px);
+  }
+  60% {
+    transform: rotate(3deg);
+  }
+  78% {
+    transform: rotate(-4deg) translateY(-8px);
+  }
+}
+
+/* 2 — crack of light, then the lid goes */
+.chest--open .chest__lid {
+  animation: lid-open var(--duration-slow) var(--ease-out-soft) forwards;
+}
+
+@keyframes lid-open {
+  60% {
+    transform: rotate(-86deg) translate(2px, 4px);
+  }
+  to {
+    transform: rotate(-78deg) translate(2px, 4px);
+  }
+}
+
+.chest--open .chest__sparks {
+  animation: sparks-show 1.6s var(--ease-out-soft) forwards;
+}
+
+@keyframes sparks-show {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  20%,
+  70% {
+    opacity: 1;
+  }
+}
+
+.chest--open .chest__spark {
+  animation: spark-fly 1.5s var(--ease-out-soft) forwards;
+  animation-delay: calc(var(--spark-index) * 90ms);
+}
+
+@keyframes spark-fly {
+  0% {
+    transform: translate(0, 0) scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--spark-dx), -54px) scale(1);
+    opacity: 0;
+  }
+}
+
+.chest--open .chest__light {
+  animation: light-burst 1s var(--ease-out-soft) forwards;
+}
+
+@keyframes light-burst {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+  35% {
+    opacity: 0.95;
+    transform: scaleY(1.05);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scaleY(1);
+  }
+}
+
+.chest--open .chest__button {
+  animation: chest-aura 1.2s var(--ease-out-soft);
+}
+
+@keyframes chest-aura {
+  0% {
+    box-shadow: 0 0 0 0 var(--chest-aura);
+  }
+  100% {
+    box-shadow: 0 0 0 90px transparent;
+  }
+}
+
+/* Contents */
+.chest-loot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 100%;
+  animation: loot-in var(--duration-base) var(--ease-out-soft);
+}
+
+@keyframes loot-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.chest-loot__total {
+  font-size: var(--text-3xl);
+  line-height: 1;
+  color: var(--color-accent);
+  text-shadow: 0 0 26px var(--color-glow);
+}
+
+.chest-loot__total-label {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.chest-loot__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--slate) 40%, transparent);
+  border: 1px solid var(--color-border);
+}
+
+.chest-loot__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.chest-loot__amount {
+  color: var(--color-text);
+}
+
+.chest-loot__cosmetic {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--mist) 35%, transparent);
+  background: color-mix(in srgb, var(--mist) 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.chest-loot__cosmetic-name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  color: var(--color-accent-soft);
+}
+
+.chest-loot__cosmetic-flavor {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-wrap: balance;
+}
+
+.chest-loot__cosmetic-note {
+  font-size: var(--text-xs);
+  color: color-mix(in srgb, var(--dim) 85%, transparent);
+}
+
+/* ---------- Milestone: the real-world reward ---------- */
+
+.milestone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(
+      120% 90% at 50% 0%,
+      color-mix(in srgb, var(--amber) 26%, transparent),
+      transparent 70%
+    ),
+    var(--color-surface-raised);
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  box-shadow:
+    0 0 70px -20px var(--color-glow),
+    var(--shadow-lg);
+  animation: milestone-in var(--duration-slow) var(--ease-out-soft);
+}
+
+@keyframes milestone-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.milestone__headline {
+  font-size: var(--text-3xl);
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.milestone__body {
+  color: var(--color-text);
+  text-wrap: balance;
+}
+
+.milestone__meta {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+}

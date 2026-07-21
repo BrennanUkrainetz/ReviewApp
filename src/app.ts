@@ -13,6 +13,7 @@ import { createRouter, type Route } from './ui/router';
 import { createCityScreen } from './ui/screens/city';
 import { createPlaceholderScreen } from './ui/screens/placeholder';
 import { createReviewScreen } from './ui/screens/review';
+import { createRewardOverlay, type RewardOverlay } from './ui/screens/reward';
 
 export function mountApp(root: HTMLElement): () => void {
   const store = createStoreFromStorage();
@@ -31,6 +32,7 @@ export function mountApp(root: HTMLElement): () => void {
   );
 
   let current: Screen | null = null;
+  let reward: RewardOverlay | null = null;
 
   const ctx: AppContext = {
     store,
@@ -62,9 +64,26 @@ export function mountApp(root: HTMLElement): () => void {
     stage.scrollTop = 0;
   }
 
+  /**
+   * Shows the chest over the City. Navigating first means the scene behind the
+   * overlay is already re-lit by the streak the review just earned.
+   */
   function presentReward(outcome: ReviewOutcome): void {
     router.navigate({ name: 'city' });
-    toasts.show(`+${outcome.reward.totalLumen} Lumen`);
+    reward?.destroy();
+    reward?.el.remove();
+
+    const overlay = createRewardOverlay({
+      store,
+      outcome,
+      onClose: () => {
+        overlay.destroy();
+        overlay.el.remove();
+        if (reward === overlay) reward = null;
+      },
+    });
+    reward = overlay;
+    root.appendChild(overlay.el);
   }
 
   const router = createRouter(mount);
@@ -74,6 +93,7 @@ export function mountApp(root: HTMLElement): () => void {
     stopRouter();
     stopMotionSync();
     current?.destroy?.();
+    reward?.destroy();
     topbar.destroy();
   };
 }
