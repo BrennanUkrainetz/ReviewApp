@@ -4,3 +4,7 @@ coverage/
 *.local
 .DS_Store
 .vite/
+
+# local dev scratch (screenshot harness)
+.shoot.mjs
+shots/

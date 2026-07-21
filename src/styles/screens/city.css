@@ -19,14 +19,52 @@
   background: var(--color-surface-sunken);
 }
 
-.city-stage__placeholder {
+.city-stage {
+  margin: 0;
+}
+
+/* Caption over the scene: names the light, and how far it is from full. */
+.lighting {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
+  left: var(--space-5);
+  bottom: var(--space-5);
+  right: var(--space-5);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  text-align: center;
-  color: var(--color-text-muted);
+  max-width: 260px;
+  pointer-events: none;
+}
+
+.lighting__label {
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-shadow: 0 1px 8px rgb(4 12 28 / 80%);
+}
+
+.lighting__detail {
+  color: color-mix(in srgb, var(--cream) 62%, transparent);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.lighting__meter {
+  display: block;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--dusk-deep) 55%, transparent);
+  overflow: hidden;
+}
+
+.lighting__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mist), var(--amber));
+  transition: width var(--duration-scene) var(--ease-in-out-soft);
 }
 
 .city-controls {

@@ -8,18 +8,26 @@
   isolation: isolate;
 }
 
-/* The sky behind everything. Its hue is driven by streak lighting (scene.css). */
+/*
+ * The sky behind the whole app. It takes the streak lighting too, but heavily
+ * mixed back into the base dusk — the page chrome has to stay dark enough for
+ * body text and secondary buttons to hold contrast at golden hour.
+ */
 .app__sky {
   position: fixed;
   inset: 0;
   z-index: -1;
   background:
     radial-gradient(
-      120% 80% at 50% 108%,
-      var(--sky-horizon, #1b3b63) 0%,
-      transparent 62%
+      130% 80% at 50% 106%,
+      color-mix(in srgb, var(--sky-horizon, #1b3b63) 34%, var(--dusk-deep)) 0%,
+      transparent 64%
     ),
-    linear-gradient(180deg, var(--sky-top, #06132a) 0%, var(--sky-bottom, #12294c) 100%);
+    linear-gradient(
+      180deg,
+      var(--dusk-deep) 0%,
+      color-mix(in srgb, var(--sky-bottom, #12294c) 30%, var(--dusk-deep)) 100%
+    );
   transition: background var(--duration-scene) var(--ease-in-out-soft);
 }
 

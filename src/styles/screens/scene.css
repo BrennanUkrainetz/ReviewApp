@@ -1,1 +1,173 @@
-/* scene — filled in by a later build phase. */
+/*
+ * The city scene. Every colour in here is a custom property written by
+ * `city-scene.ts`; the long transitions are what turn a streak change into a
+ * visible shift in light rather than a repaint.
+ */
+
+.scene {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      140% 100% at 22% 96%,
+      color-mix(in srgb, var(--scene-haze) 85%, transparent) 0%,
+      transparent 58%
+    ),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-horizon) 72%, var(--sky-bottom) 100%);
+  transition: background var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.scene__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: scene-in var(--duration-slow) var(--ease-out-soft);
+}
+
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Fills and strokes reference the lighting variables, so this one rule makes
+ * the entire city cross-fade when the streak moves.
+ */
+.scene__canvas ellipse,
+.scene__canvas path,
+.scene__canvas rect,
+.scene__canvas circle {
+  transition:
+    fill var(--duration-scene) var(--ease-in-out-soft),
+    stroke var(--duration-scene) var(--ease-in-out-soft),
+    opacity var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.scene__stars {
+  opacity: var(--scene-star-opacity);
+  transition: opacity var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.scene__sun {
+  transition:
+    transform var(--duration-scene) var(--ease-in-out-soft),
+    opacity var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.scene__sun-halo {
+  animation: sun-breathe 9s var(--ease-in-out-soft) infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes sun-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.24;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.32;
+  }
+}
+
+/* Cloud bands loop by translating exactly one scene width. */
+.scene__cloud-band {
+  animation: cloud-drift var(--drift-duration, 160s) linear infinite;
+}
+
+@keyframes cloud-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-1200px);
+  }
+}
+
+/* Islands bob very slightly, out of phase with each other. */
+.scene__island {
+  animation: island-bob var(--drift-duration, 22s) var(--ease-in-out-soft) infinite;
+}
+
+.scene__island--west {
+  animation-delay: -6s;
+}
+
+.scene__island--east {
+  animation-delay: -13s;
+}
+
+@keyframes island-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+/*
+ * SVG transform gotcha: a CSS transform overrides the `transform` attribute,
+ * so anything animated here must sit inside a positioning <g> and use
+ * `transform-box: fill-box` to get a sane local origin.
+ */
+.scene-windmill__blades {
+  animation: blade-spin 14s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes blade-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The lighthouse beam and the hearth beacon only read once there is light. */
+.scene__beam {
+  opacity: calc(var(--scene-window-opacity) * 0.35);
+  animation: beam-sweep 12s var(--ease-in-out-soft) infinite;
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+}
+
+@keyframes beam-sweep {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+.scene__beacon {
+  filter: drop-shadow(0 0 6px var(--scene-window));
+}
+
+/* Newly placed buildings arrive rather than pop in. */
+.scene-building {
+  animation: building-rise var(--duration-slow) var(--ease-out-soft);
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes building-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scaleY(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

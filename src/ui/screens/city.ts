@@ -9,21 +9,16 @@ import { findDay } from '@/domain/streak';
 import { takeDayOff } from '@/state/actions';
 import type { DayRecord, ReviewId } from '@/state/types';
 import { confirmDialog } from '../components/confirm';
+import { createLightingCaption } from '../components/lighting-caption';
 import type { AppContext, Screen } from '../context';
 import { el, replaceChildren } from '../dom';
 import { iconCheck, iconDayOff, iconHistory, iconSettings, iconShop } from '../icons';
+import { createCityScene } from '../scene/city-scene';
 
 export function createCityScreen(ctx: AppContext): Screen {
-  const stage = el(
-    'div',
-    { class: 'city-stage' },
-    el(
-      'div',
-      { class: 'city-stage__placeholder' },
-      el('p', { class: 'section-label' }, 'Aerie'),
-      el('p', {}, 'The city scene is built in phase 2.'),
-    ),
-  );
+  const scene = createCityScene(ctx.store);
+  const caption = createLightingCaption(ctx.store);
+  const stage = el('figure', { class: 'city-stage' }, scene.el, caption.el);
   const statusLine = el('p', { class: 'city-status' });
   const primaryActions = el('div', { class: 'action-rail' });
   const secondaryActions = el('div', { class: 'action-rail__secondary' });
@@ -127,7 +122,14 @@ export function createCityScreen(ctx: AppContext): Screen {
   render();
   const unsubscribe = ctx.store.subscribe(render);
 
-  return { el: root, destroy: unsubscribe };
+  return {
+    el: root,
+    destroy: () => {
+      unsubscribe();
+      caption.destroy();
+      scene.destroy();
+    },
+  };
 }
 
 /** Plain, factual status copy — no nudging, no guilt. */
