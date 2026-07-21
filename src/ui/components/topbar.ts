@@ -47,12 +47,7 @@ export function createTopbar(store: Store): TopbarHandle {
   const node = el(
     'header',
     { class: 'topbar' },
-    el(
-      'div',
-      { class: 'topbar__brand' },
-      el('h1', { class: 'topbar__name' }, 'Aerie'),
-      el('span', { class: 'topbar__tagline' }, 'a city that runs on your mornings'),
-    ),
+    el('div', { class: 'topbar__brand' }, el('h1', { class: 'topbar__name' }, 'Aerie')),
     el('div', { class: 'topbar__stats' }, streakChip, lumenChip),
   );
 

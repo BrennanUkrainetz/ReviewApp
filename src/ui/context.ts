@@ -11,9 +11,17 @@ export interface AppContext {
   toast(message: string): void;
 }
 
-/** A mounted screen. `destroy` runs on navigation away. */
+/**
+ * A screen instance.
+ *
+ * `mounted` runs once `el` is actually in the document — focus calls made
+ * before that point are silently dropped, so anything that moves focus has to
+ * happen here rather than during construction. `destroy` runs on navigation
+ * away.
+ */
 export interface Screen {
   el: HTMLElement;
+  mounted?(): void;
   destroy?(): void;
 }
 

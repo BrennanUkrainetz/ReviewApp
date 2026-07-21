@@ -154,7 +154,17 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
 
     replaceChildren(body, card);
     renderProgress();
-    doneButton.focus({ preventScroll: true });
+    focusPrimary();
+  }
+
+  /**
+   * Puts focus on the item's main action so Enter advances the flow. No-op
+   * until the screen is in the document — see `Screen.mounted`.
+   */
+  function focusPrimary(): void {
+    body
+      .querySelector<HTMLButtonElement>('.review-card__done, .review-summary .btn')
+      ?.focus({ preventScroll: true });
   }
 
   function finish(): void {
@@ -162,6 +172,7 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
     const outcome = completeReview(ctx.store, reviewId, done);
     renderProgress();
     replaceChildren(body, buildSummary(outcome));
+    focusPrimary();
   }
 
   function buildSummary(outcome: ReviewOutcome): HTMLElement {
@@ -233,6 +244,7 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
 
   return {
     el: root,
+    mounted: focusPrimary,
     destroy: () => document.removeEventListener('keydown', onKeydown),
   };
 }

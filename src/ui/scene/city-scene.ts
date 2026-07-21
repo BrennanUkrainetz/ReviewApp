@@ -7,11 +7,12 @@
  * that the browser transitions across the whole picture. Buildings are the one
  * part that gets re-rendered, and only when the owned set actually changes.
  */
-import { getBuilding } from '@/config/shop';
+import { getBuilding, getCosmetic } from '@/config/shop';
 import type { AerieState } from '@/state/types';
 import type { Store } from '@/state/store';
 import { el, svg } from '../dom';
 import { hearthHall, renderBuilding } from './buildings';
+import { renderCosmetic, SLOT_DEPTH } from './cosmetics';
 import { paletteForProgress, paletteToCssVars, streakProgress } from './palette';
 
 const VIEW_WIDTH = 1200;
@@ -299,6 +300,8 @@ function describeScene(state: AerieState, progress: number): string {
 
 export function createCityScene(store: Store): CityScene {
   const buildingLayer = svg('g', { class: 'scene__buildings' });
+  const backCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--back' });
+  const frontCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--front' });
   const sunGroup = sun();
 
   const canvas = svg(
@@ -334,10 +337,12 @@ export function createCityScene(store: Store): CityScene {
       0.5,
       140,
     ),
+    backCosmetics,
     ...ISLANDS.map(island),
     bridge({ x: 325, y: 330 }, { x: 445, y: 425 }),
     bridge({ x: 760, y: 440 }, { x: 852, y: 486 }),
     buildingLayer,
+    frontCosmetics,
     cloudBand(
       'scene__cloud-band--near',
       [
@@ -392,6 +397,26 @@ export function createCityScene(store: Store): CityScene {
     }
   }
 
+  let renderedCosmetics: string | null = null;
+
+  function renderCosmetics(state: AerieState): void {
+    const equipped = state.city.cosmetics.equipped;
+    const signature = [...equipped].sort().join(',');
+    if (signature === renderedCosmetics) return;
+    renderedCosmetics = signature;
+
+    for (const layer of [backCosmetics, frontCosmetics]) {
+      while (layer.firstChild) layer.removeChild(layer.firstChild);
+    }
+
+    for (const id of equipped) {
+      const def = getCosmetic(id);
+      const node = renderCosmetic(id);
+      if (!def || !node) continue;
+      (SLOT_DEPTH[def.slot] === 'back' ? backCosmetics : frontCosmetics).appendChild(node);
+    }
+  }
+
   function render(): void {
     const state = store.getState();
     const progress = streakProgress(state.streak.current);
@@ -409,6 +434,7 @@ export function createCityScene(store: Store): CityScene {
     sunGroup.setAttribute('opacity', palette.sunOpacity.toFixed(3));
 
     renderBuildings(state);
+    renderCosmetics(state);
     title.textContent = describeScene(state, progress);
     canvas.setAttribute('aria-label', title.textContent);
   }

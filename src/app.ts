@@ -11,9 +11,11 @@ import { el, replaceChildren } from './ui/dom';
 import { syncMotionAttribute } from './ui/motion';
 import { createRouter, type Route } from './ui/router';
 import { createCityScreen } from './ui/screens/city';
-import { createPlaceholderScreen } from './ui/screens/placeholder';
+import { createHistoryScreen } from './ui/screens/history';
 import { createReviewScreen } from './ui/screens/review';
 import { createRewardOverlay, type RewardOverlay } from './ui/screens/reward';
+import { createSettingsScreen } from './ui/screens/settings';
+import { createShopScreen } from './ui/screens/shop';
 
 export function mountApp(root: HTMLElement): () => void {
   const store = createStoreFromStorage();
@@ -46,11 +48,11 @@ export function mountApp(root: HTMLElement): () => void {
       case 'review':
         return createReviewScreen(ctx, route.reviewId);
       case 'shop':
-        return createPlaceholderScreen(ctx, 'Shop', 'Buildings and cosmetics arrive in phase 4.');
+        return createShopScreen(ctx);
       case 'history':
-        return createPlaceholderScreen(ctx, 'Progress', 'The history log arrives in phase 5.');
+        return createHistoryScreen(ctx);
       case 'settings':
-        return createPlaceholderScreen(ctx, 'Settings', 'Settings arrive in phase 5.');
+        return createSettingsScreen(ctx);
       case 'city':
       default:
         return createCityScreen(ctx);
@@ -62,6 +64,7 @@ export function mountApp(root: HTMLElement): () => void {
     current = screenFor(route);
     replaceChildren(stage, current.el);
     stage.scrollTop = 0;
+    current.mounted?.();
   }
 
   /**

@@ -171,3 +171,59 @@
     transform: none;
   }
 }
+
+/* ---------- Cosmetics ---------- */
+
+.scene-lantern {
+  animation: lantern-sway 6s var(--ease-in-out-soft) infinite;
+  animation-delay: calc(var(--lantern-index) * -0.4s);
+  transform-box: fill-box;
+  transform-origin: top center;
+}
+
+@keyframes lantern-sway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+
+.scene-companion__drift {
+  animation: companion-drift 74s linear infinite;
+}
+
+.scene-companion--kite .scene-companion__drift {
+  animation-duration: 52s;
+}
+
+@keyframes companion-drift {
+  from {
+    transform: translate(-220px, 210px);
+  }
+  50% {
+    transform: translate(620px, 150px);
+  }
+  to {
+    transform: translate(1400px, 210px);
+  }
+}
+
+.scene-banner__flag {
+  animation: flag-snap 3.6s var(--ease-in-out-soft) infinite;
+  animation-delay: calc(var(--flag-index, 0) * -0.3s);
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+@keyframes flag-snap {
+  0%,
+  100% {
+    transform: skewY(-1.5deg) scaleX(1);
+  }
+  50% {
+    transform: skewY(2deg) scaleX(0.94);
+  }
+}

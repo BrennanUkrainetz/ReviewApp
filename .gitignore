@@ -8,3 +8,4 @@ coverage/
 # local dev scratch (screenshot harness)
 .shoot.mjs
 shots/
+.debug*.mjs

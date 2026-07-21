@@ -68,6 +68,21 @@
   background: color-mix(in srgb, var(--slate) 40%, transparent);
 }
 
+/*
+ * Purchase action. A grid of amber primaries shouts; this keeps the price
+ * legible and the accent reserved for the day's actual call to action.
+ */
+.btn--buy {
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 42%, transparent);
+  color: var(--color-accent);
+}
+
+.btn--buy:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--amber) 20%, transparent);
+  border-color: var(--color-accent);
+}
+
 .btn--danger {
   background: transparent;
   border-color: color-mix(in srgb, #e0685f 55%, transparent);
@@ -159,6 +174,13 @@
 
 .stat--lumen .stat__icon {
   color: var(--color-accent-soft);
+}
+
+/* Narrow screens keep the glyph and the number; the word is redundant. */
+@media (max-width: 520px) {
+  .stat__label {
+    display: none;
+  }
 }
 
 /* A number that has just changed gets one quiet pulse. */
