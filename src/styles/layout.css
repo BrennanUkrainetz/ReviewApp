@@ -1,0 +1,119 @@
+/* App shell: a fixed topbar, a flexible stage, and a bottom action rail. */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  position: relative;
+  isolation: isolate;
+}
+
+/* The sky behind everything. Its hue is driven by streak lighting (scene.css). */
+.app__sky {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(
+      120% 80% at 50% 108%,
+      var(--sky-horizon, #1b3b63) 0%,
+      transparent 62%
+    ),
+    linear-gradient(180deg, var(--sky-top, #06132a) 0%, var(--sky-bottom, #12294c) 100%);
+  transition: background var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: var(--topbar-height);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--dusk-deep) 72%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.topbar__name {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.topbar__tagline {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stage {
+  flex: 1;
+  width: 100%;
+  max-width: var(--shell-max-width);
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.stage--flush {
+  max-width: none;
+  padding: 0;
+}
+
+/* Bottom rail of primary/secondary actions on the City screen. */
+.action-rail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.action-rail__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.action-rail__secondary > * {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 720px) {
+  .stage {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+
+  .action-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .topbar__tagline {
+    display: none;
+  }
+}

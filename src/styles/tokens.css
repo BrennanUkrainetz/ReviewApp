@@ -1,0 +1,90 @@
+/*
+ * Design tokens. Raw palette values are declared once and only referenced
+ * through semantic names below, so a colour can be retuned in one place.
+ */
+
+:root {
+  /* Palette */
+  --dusk: #0b1e3d;
+  --amber: #f5a94e;
+  --mist: #8fd8d2;
+  --slate: #2e4a6b;
+  --cream: #ffefd6;
+  --dim: #5b7a9d;
+
+  /* Derived depths of the base sky */
+  --dusk-deep: #06132a;
+  --dusk-soft: #12294c;
+
+  /* Semantic surfaces */
+  --color-bg: var(--dusk-deep);
+  --color-surface: color-mix(in srgb, var(--slate) 62%, transparent);
+  --color-surface-raised: color-mix(in srgb, var(--slate) 88%, var(--dusk-deep));
+  --color-surface-sunken: color-mix(in srgb, var(--dusk-deep) 70%, var(--slate));
+  --color-border: color-mix(in srgb, var(--mist) 16%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--mist) 34%, transparent);
+
+  /* Semantic text */
+  --color-text: var(--cream);
+  --color-text-muted: var(--dim);
+  --color-text-on-accent: #33210b;
+
+  /* Accents */
+  --color-accent: var(--amber);
+  --color-accent-strong: #ffc178;
+  --color-accent-soft: var(--mist);
+  --color-glow: color-mix(in srgb, var(--amber) 45%, transparent);
+
+  /* Typography */
+  --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', 'Cascadia Mono', monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.875rem;
+  --text-2xl: 2.5rem;
+  --text-3xl: 3.5rem;
+
+  --tracking-wide: 0.08em;
+  --tracking-wider: 0.16em;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgb(3 9 20 / 40%);
+  --shadow-md: 0 8px 24px -12px rgb(3 9 20 / 70%);
+  --shadow-lg: 0 24px 60px -24px rgb(3 9 20 / 85%);
+
+  /* Motion */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 140ms;
+  --duration-base: 260ms;
+  --duration-slow: 640ms;
+  --duration-scene: 1400ms;
+
+  /* Layout */
+  --shell-max-width: 1180px;
+  --topbar-height: 64px;
+
+  color-scheme: dark;
+}

@@ -1,0 +1,48 @@
+/* City screen: the scene takes the space, controls sit quietly beneath it. */
+
+.city {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
+}
+
+.city-stage {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  background: var(--color-surface-sunken);
+}
+
+.city-stage__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.city-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.city-status {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  min-height: 1.4em;
+}
+
+@media (max-width: 720px) {
+  .city-stage {
+    min-height: 260px;
+  }
+}
