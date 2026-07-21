@@ -7,7 +7,20 @@ chest, and grows the city. A 20-day streak earns a real-world reward.
 Single user, single machine. No accounts, no backend, no network calls — the
 webfonts are bundled and every byte of state lives in `localStorage`.
 
-The full product spec lives in [docs/SPEC.md](docs/SPEC.md).
+The full product spec lives in [docs/SPEC.md](docs/SPEC.md), and the design
+choices behind the build are in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## How it works
+
+Two review routines — Morning and Daily — run as a guided, one-item-at-a-time
+flow. Finishing either at **floor** tier (all core items) keeps the streak
+alive; a **full clear** pays more. Points become Lumen, multiplied by a streak
+bonus, and a chest pays out at the end.
+
+The streak drives the city's light: at 0 it sits in a cold pre-dawn, and at 20
+it's in full golden hour. Every 5 days pays a bonus chest, every 20 earns a real
+lunch out. A **day off** is an explicit button that holds the streak without a
+review; missing a day entirely resets the run to 0.
 
 ## Getting started
 
@@ -38,6 +51,7 @@ src/
   domain/     Pure logic: dates, scoring, streaks, rewards  (unit-tested)
   state/      Persisted state: types, storage, migrations, store, actions
   ui/         Screens, components, and the small DOM helper they share
+    scene/    The SVG city and its streak lighting
   styles/     Design tokens and per-screen stylesheets
 ```
 

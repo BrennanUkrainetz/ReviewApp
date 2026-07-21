@@ -176,7 +176,6 @@ export function createShopScreen(ctx: AppContext): Screen {
         el('span', { class: 'badge' }, SLOT_LABELS[def.slot]),
       ),
       el('p', { class: 'shop-card__flavor' }, def.flavor),
-      el('p', { class: 'shop-card__stat shop-card__stat--muted' }, 'Visual only.'),
       action,
     );
   }
@@ -199,7 +198,8 @@ export function createShopScreen(ctx: AppContext): Screen {
       replaceChildren(grid, ...BUILDINGS.map((def) => buildingCard(def, state)));
     } else {
       const owned = state.city.cosmetics.unlocked.length;
-      summary.textContent = `${owned} of ${COSMETICS.length} found. Chests drop these too.`;
+      summary.textContent =
+        `${owned} of ${COSMETICS.length} found. Purely visual — chests drop these too.`;
       replaceChildren(grid, ...COSMETICS.map((def) => cosmeticCard(def, state)));
     }
   }
