@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { CHECKLISTS, maxPoints } from '@/config/checklists';
+import {
+  CHECKLIST_META,
+  defaultItems,
+  maxPoints,
+  type Checklist,
+} from '@/config/checklists';
 import { FULL_CLEAR_BONUS_POINTS, LUMEN_PER_POINT } from '@/config/tuning';
 import { lumenFor, scoreReview, streakMultiplier } from './scoring';
 
-const morning = CHECKLISTS.morning;
+const morning: Checklist = { ...CHECKLIST_META.morning, items: defaultItems('morning') };
 const allMorningIds = morning.items.map((item) => item.id);
 const coreMorningIds = morning.items.filter((item) => item.core).map((item) => item.id);
 
@@ -23,7 +28,9 @@ describe('scoreReview', () => {
     expect(result.tier).toBe('floor');
     expect(result.bonusPoints).toBe(0);
     expect(result.countsForStreak).toBe(true);
-    expect(result.skippedItemIds.length).toBe(morning.items.length - coreMorningIds.length);
+    expect(result.skippedItemIds.length).toBe(
+      morning.items.length - coreMorningIds.length,
+    );
   });
 
   it('grades a skipped core item as partial, which does not count', () => {

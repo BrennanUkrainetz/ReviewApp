@@ -176,6 +176,20 @@
   color: var(--color-accent-soft);
 }
 
+.stat--aether .stat__icon {
+  color: var(--mist);
+}
+
+/* Cinder runs warm — it is the flame currency. */
+.stat--cinder .stat__icon {
+  color: #e2704f;
+}
+
+/* Hidden until the first Aether is earned. */
+.stat[hidden] {
+  display: none;
+}
+
 /* Narrow screens keep the glyph and the number; the word is redundant. */
 @media (max-width: 520px) {
   .stat__label {
@@ -336,10 +350,82 @@
   border-radius: var(--radius-pill);
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
 }
 
 .tab[aria-selected='true'] {
   background: color-mix(in srgb, var(--mist) 18%, transparent);
   color: var(--color-text);
+}
+
+/* ---------- Form fields ---------- */
+
+.field {
+  width: 100%;
+  min-height: 42px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-base);
+  transition:
+    border-color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease;
+}
+
+.field::placeholder {
+  color: var(--color-text-muted);
+}
+
+.field:hover {
+  border-color: var(--color-accent-soft);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--dusk-deep) 55%, var(--slate));
+}
+
+/* Square, icon-only control — row actions in lists. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  transition:
+    color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  background: color-mix(in srgb, var(--mist) 10%, transparent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: #ffb4a2;
+  border-color: color-mix(in srgb, #ff8a70 45%, transparent);
+  background: color-mix(in srgb, #ff8a70 12%, transparent);
+}
+
+.icon-btn__glyph {
+  display: block;
+  width: 18px;
+  height: 18px;
 }

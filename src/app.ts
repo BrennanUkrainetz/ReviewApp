@@ -10,6 +10,8 @@ import type { AppContext, Screen } from './ui/context';
 import { el, replaceChildren } from './ui/dom';
 import { syncMotionAttribute } from './ui/motion';
 import { createRouter, type Route } from './ui/router';
+import { createAscensionScreen } from './ui/screens/ascension';
+import { createResearchScreen } from './ui/screens/research';
 import { createCityScreen } from './ui/screens/city';
 import { createHistoryScreen } from './ui/screens/history';
 import { createReviewScreen } from './ui/screens/review';
@@ -51,6 +53,10 @@ export function mountApp(root: HTMLElement): () => void {
         return createShopScreen(ctx);
       case 'history':
         return createHistoryScreen(ctx);
+      case 'ascension':
+        return createAscensionScreen(ctx);
+      case 'research':
+        return createResearchScreen(ctx);
       case 'settings':
         return createSettingsScreen(ctx);
       case 'city':

@@ -13,7 +13,7 @@ import type { Store } from '@/state/store';
 import { el, svg } from '../dom';
 import { hearthHall, renderBuilding } from './buildings';
 import { renderCosmetic, SLOT_DEPTH } from './cosmetics';
-import { paletteForProgress, paletteToCssVars, streakProgress } from './palette';
+import { paletteFor, paletteToCssVars, streakProgress } from './palette';
 
 const VIEW_WIDTH = 1200;
 const VIEW_HEIGHT = 660;
@@ -29,13 +29,26 @@ interface IslandSpec {
   driftDuration: number;
 }
 
+/**
+ * Four slots per island, staggered in depth rather than lined up in a row.
+ * Listed back to front: the draw order below sorts on `y`, so a building on a
+ * nearer slot overlaps one behind it and the cluster reads as a skyline
+ * instead of a shelf.
+ */
 const ISLANDS: IslandSpec[] = [
   {
     id: 'west',
     cx: 235,
     cy: 322,
     rx: 118,
-    slots: [{ x: 235, y: 316 }],
+    // Pulled in from the island's true edges — a heavily-levelled building
+    // grows side wings, and those must not hang out over open sky.
+    slots: [
+      { x: 208, y: 300 },
+      { x: 270, y: 308 },
+      { x: 178, y: 322 },
+      { x: 246, y: 330 },
+    ],
     driftDuration: 19,
   },
   {
@@ -44,8 +57,10 @@ const ISLANDS: IslandSpec[] = [
     cy: 430,
     rx: 192,
     slots: [
-      { x: 492, y: 424 },
-      { x: 712, y: 436 },
+      { x: 540, y: 404 },
+      { x: 664, y: 412 },
+      { x: 468, y: 430 },
+      { x: 716, y: 442 },
     ],
     driftDuration: 23,
   },
@@ -55,8 +70,10 @@ const ISLANDS: IslandSpec[] = [
     cy: 486,
     rx: 138,
     slots: [
-      { x: 908, y: 478 },
-      { x: 1012, y: 490 },
+      { x: 934, y: 460 },
+      { x: 1000, y: 470 },
+      { x: 902, y: 484 },
+      { x: 982, y: 496 },
     ],
     driftDuration: 27,
   },
@@ -95,7 +112,13 @@ function buildStars(): SVGGElement {
 }
 
 /** One puffy cloud built from overlapping ellipses. */
-function cloud(x: number, y: number, scale: number, fill: string, opacity: number): SVGGElement {
+function cloud(
+  x: number,
+  y: number,
+  scale: number,
+  fill: string,
+  opacity: number,
+): SVGGElement {
   const puffs: [number, number, number, number][] = [
     [0, 0, 62, 26],
     [-46, 8, 40, 20],
@@ -128,7 +151,10 @@ function cloudBand(
   }
   return svg(
     'g',
-    { class: `scene__cloud-band ${className}`, style: `--drift-duration:${durationSeconds}s` },
+    {
+      class: `scene__cloud-band ${className}`,
+      style: `--drift-duration:${durationSeconds}s`,
+    },
     band,
   );
 }
@@ -189,7 +215,10 @@ function island(spec: IslandSpec): SVGGElement {
 }
 
 /** A rope bridge slung between two islands. */
-function bridge(from: { x: number; y: number }, to: { x: number; y: number }): SVGGElement {
+function bridge(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): SVGGElement {
   const midX = (from.x + to.x) / 2;
   const sag = Math.abs(to.x - from.x) * 0.18;
   const midY = Math.max(from.y, to.y) + sag;
@@ -235,15 +264,35 @@ function sceneDefs(): SVGDefsElement {
   const halo = svg(
     'radialGradient',
     { id: 'aerie-sun-halo' },
-    svg('stop', { offset: '0%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0.55' }),
-    svg('stop', { offset: '45%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0.22' }),
-    svg('stop', { offset: '100%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0' }),
+    svg('stop', {
+      offset: '0%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0.55',
+    }),
+    svg('stop', {
+      offset: '45%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0.22',
+    }),
+    svg('stop', {
+      offset: '100%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0',
+    }),
   );
   const core = svg(
     'radialGradient',
     { id: 'aerie-sun-core' },
-    svg('stop', { offset: '60%', 'stop-color': 'var(--scene-sun-core)', 'stop-opacity': '1' }),
-    svg('stop', { offset: '100%', 'stop-color': 'var(--scene-sun-core)', 'stop-opacity': '0' }),
+    svg('stop', {
+      offset: '60%',
+      'stop-color': 'var(--scene-sun-core)',
+      'stop-opacity': '1',
+    }),
+    svg('stop', {
+      offset: '100%',
+      'stop-color': 'var(--scene-sun-core)',
+      'stop-opacity': '0',
+    }),
   );
   return svg('defs', {}, halo, core);
 }
@@ -377,18 +426,27 @@ export function createCityScene(store: Store): CityScene {
     // The hearth is always there — the city is never empty.
     buildingLayer.appendChild(placeAt(600, 418, hearthHall()));
 
-    // Sort by depth so nearer islands overlap farther ones correctly.
+    /** Where a building stands, or `null` if its island or slot is unknown. */
+    const slotFor = (id: string): { x: number; y: number; island: number } | null => {
+      const def = getBuilding(id);
+      if (!def) return null;
+      const island = ISLANDS.findIndex((candidate) => candidate.id === def.island);
+      const spec = ISLANDS[island];
+      const slot = spec?.slots[def.slot] ?? spec?.slots[0];
+      return slot ? { ...slot, island } : null;
+    };
+
+    // Sort back to front: island first, then depth within it, so a nearer
+    // building always overlaps the one behind rather than the other way round.
     const owned = [...state.city.buildings].sort((a, b) => {
-      const islandOf = (id: string): number =>
-        ISLANDS.findIndex((spec) => spec.id === (getBuilding(id)?.island ?? 'main'));
-      return islandOf(a.id) - islandOf(b.id);
+      const left = slotFor(a.id);
+      const right = slotFor(b.id);
+      if (!left || !right) return 0;
+      return left.island - right.island || left.y - right.y;
     });
 
     for (const entry of owned) {
-      const def = getBuilding(entry.id);
-      if (!def) continue;
-      const spec = ISLANDS.find((candidate) => candidate.id === def.island);
-      const slot = spec?.slots[def.slot] ?? spec?.slots[0];
+      const slot = slotFor(entry.id);
       if (!slot) continue;
 
       const node = renderBuilding(entry.id, entry.level);
@@ -413,19 +471,22 @@ export function createCityScene(store: Store): CityScene {
       const def = getCosmetic(id);
       const node = renderCosmetic(id);
       if (!def || !node) continue;
-      (SLOT_DEPTH[def.slot] === 'back' ? backCosmetics : frontCosmetics).appendChild(node);
+      (SLOT_DEPTH[def.slot] === 'back' ? backCosmetics : frontCosmetics).appendChild(
+        node,
+      );
     }
   }
 
   function render(): void {
     const state = store.getState();
     const progress = streakProgress(state.streak.current);
-    const palette = paletteForProgress(progress);
+    const palette = paletteFor(state.streak.current, state.ascension.count);
 
     for (const [name, value] of Object.entries(paletteToCssVars(palette))) {
       root.style.setProperty(name, value);
       // The page background shares the sky variables.
-      if (name.startsWith('--sky-')) document.documentElement.style.setProperty(name, value);
+      if (name.startsWith('--sky-'))
+        document.documentElement.style.setProperty(name, value);
     }
 
     const sunX = 268;

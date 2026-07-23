@@ -1,0 +1,223 @@
+/* Ascension: the offer at the top, the perk tree below it. The offer is the
+   only place in the app that gets to shout, since it runs at most every couple
+   of weeks. */
+
+.ascend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.ascend__summary {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.ascend__band,
+.ascend__offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.ascend__offer {
+  align-items: flex-start;
+  border-color: color-mix(in srgb, var(--mist) 40%, transparent);
+  background:
+    radial-gradient(
+      120% 140% at 50% 0%,
+      color-mix(in srgb, var(--mist) 12%, transparent),
+      transparent 70%
+    ),
+    var(--color-surface);
+}
+
+.ascend__band-label,
+.ascend__offer-lead {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.ascend__band-name {
+  font-size: var(--text-lg);
+}
+
+.ascend__band-blurb,
+.ascend__offer-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-wrap: pretty;
+}
+
+.ascend__band-count {
+  font-size: var(--text-sm);
+  color: var(--color-accent-soft);
+  margin-top: auto;
+}
+
+.ascend__offer-amount {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  color: var(--cream);
+}
+
+.ascend__offer .btn {
+  margin-top: auto;
+}
+
+.ascend__wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.ascend__wallet .stat__icon {
+  width: 20px;
+  height: 20px;
+  color: var(--mist);
+}
+
+.ascend__wallet .num {
+  color: var(--cream);
+  font-size: var(--text-md);
+}
+
+.ascend__tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.perk-branch__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.perk-branch__name {
+  font-size: var(--text-md);
+}
+
+.perk-branch__blurb {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.perk-branch__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.perk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  transition: border-color var(--duration-fast) ease;
+}
+
+.perk--owned {
+  border-color: color-mix(in srgb, var(--mist) 45%, transparent);
+  background: color-mix(in srgb, var(--mist) 8%, var(--color-surface));
+}
+
+.perk--available {
+  border-color: color-mix(in srgb, var(--amber) 35%, transparent);
+}
+
+/* A locked perk still shows what it does — knowing what you are working
+   toward is the whole reason to look at a tree. */
+.perk--locked {
+  opacity: 0.62;
+}
+
+.perk__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.perk__name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.perk__cost {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--mist);
+  font-size: var(--text-sm);
+}
+
+.perk__cost::after {
+  content: '◈';
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.perk__lock {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted);
+}
+
+.perk__effect {
+  font-size: var(--text-sm);
+  color: var(--color-accent-soft);
+  text-wrap: pretty;
+}
+
+.perk__flavor {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .ascend__summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* The Workshop reuses the ascension layout; these are its extras.     */
+/* ------------------------------------------------------------------ */
+
+.workshop__source {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid #e2704f;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.workshop__next {
+  margin: var(--space-5) 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}

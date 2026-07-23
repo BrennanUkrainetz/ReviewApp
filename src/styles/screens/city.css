@@ -84,3 +84,200 @@
     min-height: 260px;
   }
 }
+
+/* The day's contract and heat. Two quiet lines under the status copy — this
+   is information, not a call to action; the buttons below are that. */
+.city-day {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-2);
+}
+
+.city-day__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.city-day__item--done {
+  border-color: color-mix(in srgb, var(--mist) 40%, transparent);
+}
+
+.city-day__item--hot {
+  border-color: color-mix(in srgb, var(--amber) 40%, transparent);
+}
+
+.city-day__label {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.city-day__value {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  text-wrap: pretty;
+}
+
+/* Motes: layered over the scene, never inside it. See components/motes.ts for
+   why they are DOM rather than SVG. */
+.mote-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mote-field[hidden] {
+  display: none;
+}
+
+.mote {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  background: radial-gradient(
+    circle at 40% 35%,
+    var(--cream) 0%,
+    var(--amber) 45%,
+    color-mix(in srgb, var(--amber) 30%, transparent) 70%,
+    transparent 78%
+  );
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--amber) 65%, transparent));
+  animation: mote-drift 7s ease-in-out infinite alternate;
+}
+
+.mote:hover,
+.mote:focus-visible {
+  transform: scale(1.15);
+}
+
+.mote--caught {
+  animation: none;
+  transform: scale(1.8);
+  opacity: 0;
+  transition:
+    transform 220ms ease-out,
+    opacity 220ms ease-out;
+}
+
+@keyframes mote-drift {
+  from {
+    transform: translate(-8px, 6px);
+  }
+  to {
+    transform: translate(10px, -10px);
+  }
+}
+
+/* base.css already collapses every animation globally when motion is reduced;
+   the mote just needs to not vanish along with it. */
+html[data-reduce-motion='true'] .mote {
+  transform: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* The vault                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Sits between the status line and the day bar: the first thing worth looking
+   at, and — outside a window — the first thing you can do nothing about. The
+   closed state is deliberately quiet. Only an open window earns the accent. */
+.vault {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+  transition:
+    border-color var(--duration-base) var(--ease-out-soft),
+    box-shadow var(--duration-base) var(--ease-out-soft);
+}
+
+.vault--open {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-glow), var(--shadow-md);
+}
+
+.vault__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.vault__label {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.vault__amount {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.vault--open .vault__amount {
+  color: var(--color-accent-strong);
+}
+
+.vault__meter {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--dusk-deep) 70%, transparent);
+  overflow: hidden;
+}
+
+.vault__meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mist), var(--color-accent));
+  /* Width is written every tick, so this is what makes it creep rather than
+     jump. Long, because the underlying change is genuinely slow. */
+  transition: width var(--duration-slow) linear;
+}
+
+/* Full means output is being thrown away. Worth a colour of its own. */
+.vault--full .vault__meter-fill {
+  background: linear-gradient(90deg, var(--color-accent), #e2704f);
+}
+
+.vault__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.vault__status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.vault--full .vault__status {
+  color: var(--color-accent-strong);
+}
+
+.vault__collect[hidden] {
+  display: none;
+}
+
+.vault__rate {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

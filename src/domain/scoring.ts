@@ -12,6 +12,7 @@ import {
   MULTIPLIER_PER_DAY,
 } from '@/config/tuning';
 import type { Tier } from '@/state/types';
+import { NO_MODS, type Mods } from './ascension';
 
 export interface ScoreResult {
   tier: Tier;
@@ -32,7 +33,10 @@ export interface ScoreResult {
  * Floor = every core item done. Full = every item done. Anything less still
  * pays out for the work done, it just doesn't advance the streak.
  */
-export function scoreReview(checklist: Checklist, doneIds: Iterable<string>): ScoreResult {
+export function scoreReview(
+  checklist: Checklist,
+  doneIds: Iterable<string>,
+): ScoreResult {
   const done = new Set(doneIds);
   const doneItems = checklist.items.filter((item) => done.has(item.id));
   const skipped = checklist.items.filter((item) => !done.has(item.id));
@@ -58,15 +62,21 @@ export function scoreReview(checklist: Checklist, doneIds: Iterable<string>): Sc
 /**
  * Streak bonus applied to every payout: 1.0 at streak 0, capped at
  * `1 + MULTIPLIER_CAP_STREAK * MULTIPLIER_PER_DAY` (1.4x at a 20 streak).
+ *
+ * The Discipline perks move both ends of that — a raised cap keeps the ramp
+ * climbing past day 20, and a raised rate makes every day of it worth more.
  */
-export function streakMultiplier(streak: number): number {
-  const effective = Math.min(Math.max(streak, 0), MULTIPLIER_CAP_STREAK);
-  return 1 + effective * MULTIPLIER_PER_DAY;
+export function streakMultiplier(streak: number, mods: Mods = NO_MODS): number {
+  const cap = MULTIPLIER_CAP_STREAK + mods.streakCap;
+  const effective = Math.min(Math.max(streak, 0), cap);
+  return 1 + effective * (MULTIPLIER_PER_DAY + mods.streakRate);
 }
 
 /** Lumen paid for `points`, at the streak the day will end on. */
-export function lumenFor(points: number, streak: number): number {
-  return Math.round(points * LUMEN_PER_POINT * streakMultiplier(streak));
+export function lumenFor(points: number, streak: number, mods: Mods = NO_MODS): number {
+  return Math.round(
+    points * LUMEN_PER_POINT * streakMultiplier(streak, mods) * mods.review,
+  );
 }
 
 const TIER_LABELS: Record<Tier, string> = {

@@ -3,7 +3,7 @@
  * every single day. Runs against jsdom through the real store and actions.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CHECKLISTS } from '@/config/checklists';
+import { defaultItems } from '@/config/checklists';
 import { createInitialState } from '@/state/defaults';
 import { setStorageBackend } from '@/state/storage';
 import { createStore, type Store } from '@/state/store';
@@ -13,10 +13,18 @@ import { createReviewScreen } from './review';
 /** Lets the click handler's async advance settle. */
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(): { ctx: AppContext; store: Store; navigations: unknown[]; rewards: unknown[] } {
+function setup(): {
+  ctx: AppContext;
+  store: Store;
+  navigations: unknown[];
+  rewards: unknown[];
+} {
   const state = createInitialState();
   // Motion off, so the card transitions resolve immediately.
-  const store = createStore({ ...state, settings: { ...state.settings, reduceMotion: true } });
+  const store = createStore({
+    ...state,
+    settings: { ...state.settings, reduceMotion: true },
+  });
   const navigations: unknown[] = [];
   const rewards: unknown[] = [];
 
@@ -66,10 +74,10 @@ describe('review screen', () => {
     mount(ctx);
 
     expect(document.querySelectorAll('.review-card')).toHaveLength(1);
-    expect(currentLabel()).toBe(CHECKLISTS.morning.items[0]!.label);
+    expect(currentLabel()).toBe(defaultItems('morning')[0]!.label);
 
     await clickDone();
-    expect(currentLabel()).toBe(CHECKLISTS.morning.items[1]!.label);
+    expect(currentLabel()).toBe(defaultItems('morning')[1]!.label);
     expect(document.querySelectorAll('.review-card')).toHaveLength(1);
   });
 
@@ -83,9 +91,11 @@ describe('review screen', () => {
     const { ctx, store } = setup();
     mount(ctx);
 
-    for (let i = 0; i < CHECKLISTS.morning.items.length; i += 1) await clickDone();
+    for (let i = 0; i < defaultItems('morning').length; i += 1) await clickDone();
 
-    expect(document.querySelector('.review-summary')?.getAttribute('data-tier')).toBe('full');
+    expect(document.querySelector('.review-summary')?.getAttribute('data-tier')).toBe(
+      'full',
+    );
     expect(store.getState().streak.current).toBe(1);
     expect(store.getState().currency.lumen).toBeGreaterThan(0);
     expect(document.activeElement?.textContent).toContain('Collect your chest');
@@ -95,7 +105,7 @@ describe('review screen', () => {
     const { ctx, store } = setup();
     mount(ctx);
 
-    for (const item of CHECKLISTS.morning.items) {
+    for (const item of defaultItems('morning')) {
       if (item.core) await clickDone();
       else await clickSkip();
     }
@@ -103,7 +113,7 @@ describe('review screen', () => {
     const summary = document.querySelector('.review-summary');
     expect(summary?.getAttribute('data-tier')).toBe('floor');
     expect(document.querySelectorAll('.review-summary__skipped-item')).toHaveLength(
-      CHECKLISTS.morning.items.filter((item) => !item.core).length,
+      defaultItems('morning').filter((item) => !item.core).length,
     );
     expect(store.getState().streak.current).toBe(1);
   });
@@ -112,7 +122,7 @@ describe('review screen', () => {
     const { ctx, rewards } = setup();
     mount(ctx);
 
-    for (let i = 0; i < CHECKLISTS.morning.items.length; i += 1) await clickDone();
+    for (let i = 0; i < defaultItems('morning').length; i += 1) await clickDone();
     document.querySelector<HTMLButtonElement>('.review-summary .btn')?.click();
 
     expect(rewards).toHaveLength(1);

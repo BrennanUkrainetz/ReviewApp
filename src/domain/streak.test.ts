@@ -51,7 +51,11 @@ describe('reconcileStreak', () => {
   });
 
   it('breaks the run when a whole day passed with no activity', () => {
-    const stale = stateWith({ current: 12, longest: 12, lastActiveDate: addDays(TODAY, -2) });
+    const stale = stateWith({
+      current: 12,
+      longest: 12,
+      lastActiveDate: addDays(TODAY, -2),
+    });
     const result = reconcileStreak(stale, TODAY);
     expect(result.streak.current).toBe(0);
     expect(result.streak.longest).toBe(12);
@@ -65,7 +69,11 @@ describe('reconcileStreak', () => {
 
 describe('advanceStreak', () => {
   it('increments once and records the longest run', () => {
-    const before = stateWith({ current: 3, longest: 3, lastCompletedDate: addDays(TODAY, -1) });
+    const before = stateWith({
+      current: 3,
+      longest: 3,
+      lastCompletedDate: addDays(TODAY, -1),
+    });
     const after = advanceStreak(before, TODAY);
     expect(after.streak.current).toBe(4);
     expect(after.streak.longest).toBe(4);

@@ -13,7 +13,12 @@
       color-mix(in srgb, var(--scene-haze) 85%, transparent) 0%,
       transparent 58%
     ),
-    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-horizon) 72%, var(--sky-bottom) 100%);
+    linear-gradient(
+      180deg,
+      var(--sky-top) 0%,
+      var(--sky-horizon) 72%,
+      var(--sky-bottom) 100%
+    );
   transition: background var(--duration-scene) var(--ease-in-out-soft);
 }
 
@@ -225,5 +230,24 @@
   }
   50% {
     transform: skewY(2deg) scaleX(0.94);
+  }
+}
+
+/* The Aether Well's shaft rises rather than sweeps — it shares the beam's
+   light-gated opacity but none of its rotation. */
+.scene__shaft {
+  opacity: calc(var(--scene-window-opacity) * 0.3);
+  animation: shaft-breathe 9s var(--ease-in-out-soft) infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes shaft-breathe {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.08);
   }
 }

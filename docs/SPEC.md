@@ -15,13 +15,14 @@ in order, committing after each phase.
 ## 1. Problem this solves
 
 The task lists themselves aren't the problem — motivation in the moment
-is. Brennan remembers to do the reviews but doesn't *feel* like doing them
+is. Brennan remembers to do the reviews but doesn't _feel_ like doing them
 at the time. The fix isn't a better reminder, it's making starting the
 review low-friction and rewarding, with visible progress (streak, city
 growth) that makes skipping feel like a loss rather than a neutral
 non-event.
 
 Design principles this app must honor:
+
 - The floor must always be achievable, even on bad days (two-tier scoring).
 - Rewards should escalate: small chest payout every time → occasional
   milestone drop → big real-world reward at a 20-streak.
@@ -58,6 +59,7 @@ islands drifting above the clouds, viewed at a fixed isometric-ish angle.
 This is the single persistent "world" — not a separate screen per feature.
 
 **Palette** (use these as CSS custom properties, named semantically):
+
 - `--dusk` `#0B1E3D` — deep sky/background base
 - `--amber` `#F5A94E` — sunrise glow, primary accent/CTA
 - `--mist` `#8FD8D2` — pale teal, secondary accent (clouds, secondary UI)
@@ -66,6 +68,7 @@ This is the single persistent "world" — not a separate screen per feature.
 - `--dim` `#5B7A9D` — secondary/muted text
 
 **Typography**:
+
 - Display face: something geometric/architectural with character (e.g.
   Space Grotesk, Sora, or similar via Google Fonts or a bundled webfont).
   Used for headings, the city name, streak counter.
@@ -85,6 +88,7 @@ is the "wow" moment of the app — spend real effort here; keep everything
 else quiet and disciplined around it.
 
 **Layout** (single main screen, "The City"):
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │  🔥 Streak: 12   (Day 12 of current run)   ✦ 1,240   │
@@ -104,7 +108,7 @@ else quiet and disciplined around it.
 During a review: a full-screen guided flow, one checklist item at a
 time (not a wall of checkboxes) — big tap target, satisfying check
 animation, then auto-advance. This is deliberately more immersive/slower
-than a plain to-do list, since the immersive walk-through *is* the
+than a plain to-do list, since the immersive walk-through _is_ the
 mechanism that makes starting easy.
 
 Motion should be used deliberately, not scattered: the page-load city
@@ -164,7 +168,7 @@ Store as a single JSON object in `localStorage` under key `aerie-state`.
     {
       "date": "2026-07-20",
       "morning": { "completed": true, "tier": "full", "pointsEarned": 8 },
-      "daily":   { "completed": true, "tier": "floor", "pointsEarned": 4 },
+      "daily": { "completed": true, "tier": "floor", "pointsEarned": 4 },
       "dayOff": false
     }
   ],
@@ -175,9 +179,7 @@ Store as a single JSON object in `localStorage` under key `aerie-state`.
     "totalBigMilestonesHit": 1
   },
   "city": {
-    "buildings": [
-      { "id": "greenhouse", "level": 2 }
-    ],
+    "buildings": [{ "id": "greenhouse", "level": 2 }],
     "cosmetics": {
       "unlocked": ["teal-lanterns"],
       "equipped": ["teal-lanterns"]
@@ -203,6 +205,7 @@ breaks the streak back to 0 the next time the app is opened.
 ## 6. Checklist content
 
 **Morning Review** ("Ascend" — morning expedition):
+
 1. Take lunch to fridge
 2. Make a drink
 3. Review calendar
@@ -212,6 +215,7 @@ breaks the streak back to 0 the next time the app is opened.
 7. Look at 2026 goals and mentally rehearse them
 
 **Daily Review** ("Descend" — evening/end-of-day expedition):
+
 1. Look at HubSpot and update deal stages if needed
 2. Clear email and Todoist inboxes
 3. Clear bullet journal (Kindle Scribe) from today, plan for tomorrow
@@ -230,6 +234,7 @@ may refine, but keep it simple — most items worth 1, a couple of
 higher-value "core" items worth more):
 
 Morning Review (7 items, target ~10 pts):
+
 - Take lunch to fridge — 1
 - Make a drink — 1
 - Review calendar — 1
@@ -239,12 +244,14 @@ Morning Review (7 items, target ~10 pts):
 - Review 2026 goals — 3 (core)
 
 Daily Review (4 items, target ~8 pts):
+
 - HubSpot deal stages — 2
 - Clear email/Todoist inboxes — 2
 - Clear bullet journal / plan tomorrow — 3 (core)
 - Clean dishes — 1
 
 **Two tiers per review, per day:**
+
 - **Floor** — completing just the "core" item(s) marked above (or any
   minimum subset Brennan defines) counts as a Floor pass: keeps the
   streak alive, awards reduced Lumen, but does not count as a "full
@@ -266,6 +273,7 @@ easy to tune later.
 
 After each review (morning or daily) is completed (floor or full),
 show a **chest-opening sequence**:
+
 - Chest appears/drops onto the city scene.
 - Tap/click to open — a satisfying animation (shake → crack of light →
   burst open), sound optional (respect a mute toggle, don't require
@@ -338,28 +346,33 @@ bigger burst — without requiring new mechanics.
 ## 12. Build phases (execute in order, verify each before moving on)
 
 **Phase 1 — Skeleton & state**
+
 - Project scaffold, `storage.js` module, data model from §5, a barebones
   City screen showing streak/currency numbers (no art yet), and the two
   review flows as plain checklists with tier scoring. Get the full loop
   working end-to-end with placeholder visuals before investing in art.
 
 **Phase 2 — City scene & streak lighting**
+
 - Build the SVG/canvas city scene, islands, a handful of placeholder
   buildings, and the streak-driven lighting transition (the signature
   element from §3). This is the highest-effort visual piece — get it
   right before layering on shop/chest polish.
 
 **Phase 3 — Chest reveal & milestones**
+
 - Chest animation, Lumen payout, cosmetic-drop chance, milestone
   detection (small + big/20-streak), the distinct milestone chest
   treatment, and the "you've earned a real lunch" screen at 20-streak.
 
 **Phase 4 — Shop**
+
 - Buildings (with passive trickle) and cosmetics, wired to actually
   affect the city scene (bought buildings appear; equipped cosmetics
   show).
 
 **Phase 5 — History, settings, polish pass**
+
 - History/progress screen, settings (reduce motion, mute, reset),
   responsive check, keyboard focus states, final self-critique pass per
   the frontend-design skill (screenshot, remove one accessory, check

@@ -1,12 +1,14 @@
+import { defaultChecklists } from '@/config/checklists';
 import { BIG_MILESTONE_INTERVAL, SMALL_MILESTONE_INTERVAL } from '@/config/tuning';
 import type { AerieState } from './types';
 
 /** Bumped whenever the persisted shape changes; see `migrations.ts`. */
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 7;
 
-export function createInitialState(): AerieState {
+export function createInitialState(now: Date = new Date()): AerieState {
   return {
     version: STATE_VERSION,
+    checklists: defaultChecklists(),
     streak: {
       current: 0,
       longest: 0,
@@ -14,7 +16,7 @@ export function createInitialState(): AerieState {
       lastActiveDate: null,
       daysOffUsed: 0,
     },
-    currency: { lumen: 0 },
+    currency: { lumen: 0, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
     history: [],
     milestones: {
       nextBigAt: BIG_MILESTONE_INTERVAL,
@@ -22,6 +24,19 @@ export function createInitialState(): AerieState {
       smallInterval: SMALL_MILESTONE_INTERVAL,
       bigInterval: BIG_MILESTONE_INTERVAL,
       totalBigMilestonesHit: 0,
+    },
+    ascension: { count: 0, aether: 0, aetherEarned: 0, perks: [] },
+    achievements: [],
+    research: [],
+    motes: { date: null, remaining: 0, caught: 0 },
+    // Accrual starts now, not at the epoch — a fresh save must not open with
+    // thirty days of backdated output already in the vault.
+    vault: {
+      accruedThrough: now.getTime(),
+      lumen: 0,
+      carry: 0,
+      lastCollectedAt: null,
+      lifetimeCollected: 0,
     },
     city: {
       buildings: [],
