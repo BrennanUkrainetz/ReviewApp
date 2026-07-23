@@ -10,7 +10,12 @@
  * here, since nothing is ever displayed to more than three significant digits.
  */
 
-/** Short scale, starting at 10^3. Runs to 10^33, well past anything reachable. */
+/**
+ * Short scale, starting at 10^3 and running to 10^63 (vigintillion). The
+ * high-island ladder and a few ascensions of output multipliers climb well
+ * into this range; past the end of it, `formatBig` falls back to scientific
+ * notation, so the number stays readable however large the city gets.
+ */
 const SUFFIXES = [
   '',
   'K',
@@ -24,6 +29,16 @@ const SUFFIXES = [
   'Oc',
   'No',
   'Dc',
+  'Ud',
+  'Dd',
+  'Td',
+  'Qad',
+  'Qid',
+  'Sxd',
+  'Spd',
+  'Ocd',
+  'Nod',
+  'Vg',
 ] as const;
 
 const STEP = 1000;
@@ -53,7 +68,11 @@ export function formatBig(value: number): string {
     );
   }
 
-  const tier = Math.min(Math.floor(Math.log10(magnitude) / 3), SUFFIXES.length - 1);
+  const tier = Math.floor(Math.log10(magnitude) / 3);
+  // Past the named scale, three significant figures in scientific notation
+  // beat a suffix nobody can name — `1.23e69` reads; `1230000Vg` does not.
+  if (tier >= SUFFIXES.length) return sign + magnitude.toExponential(2);
+
   const scaled = magnitude / STEP ** tier;
 
   // Rounding can push a value up a tier (999.7K → "1000K"); re-check once.

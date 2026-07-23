@@ -97,6 +97,81 @@
   }
 }
 
+/*
+ * The world — islands, buildings, and the home cluster's cosmetics — pans one
+ * page-width at a time. The sky layers around it stay fixed, so this reads as
+ * the city sliding past rather than the whole picture scrolling. The global
+ * reduce-motion rule zeroes the transition, so the pan simply snaps.
+ */
+.scene__world {
+  transition: transform var(--duration-slow) var(--ease-out-soft);
+  will-change: transform;
+}
+
+/* The pager overlays the top of the scene: two arrows and the island's name. */
+.scene-pager {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--slate) 66%, transparent);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(6px);
+}
+
+/* `hidden` has to win over `display: flex`. */
+.scene-pager[hidden] {
+  display: none;
+}
+
+.scene-pager__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+  transition: background var(--duration-fast, 160ms) var(--ease-out-soft);
+}
+
+.scene-pager__arrow:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cream) 16%, transparent);
+}
+
+.scene-pager__arrow:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.scene-pager__icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.scene-pager__label {
+  min-width: 8.5ch;
+  padding: 0 var(--space-1);
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--cream);
+}
+
 /* Islands bob very slightly, out of phase with each other. */
 .scene__island {
   animation: island-bob var(--drift-duration, 22s) var(--ease-in-out-soft) infinite;

@@ -1,7 +1,9 @@
 /**
  * Shop catalogue: buildings (the city's Lumen output) and cosmetics (purely
  * visual). Plain data — add or retune entries without touching logic. The
- * maths that reads this data lives in `src/domain/economy.ts`.
+ * maths that reads this data lives in `src/domain/economy.ts`, and which island
+ * each building sits on — and so which ascension it unlocks at — is defined in
+ * `src/config/islands.ts`.
  *
  * ## The ladder
  *
@@ -24,7 +26,15 @@
  * still quoted per *day*, so the ladder arithmetic above is unchanged; what
  * changed is when you get to hold it. A day with no review logged accrues at a
  * trickle, so the curve is still one that can only be climbed by showing up.
+ *
+ * The first twelve tiers stand on the home cluster. The eight above them stand
+ * on the high islands, two per altitude band, and are hidden until an ascension
+ * has climbed the city into that band — so the ladder keeps going exactly where
+ * the home islands run out of room. Their costs run past what float64 holds
+ * exactly, which is fine: nothing here is ever shown to more than three
+ * significant figures (see `domain/bignum.ts`).
  */
+import type { IslandId } from './islands';
 
 export interface BuildingDef {
   id: string;
@@ -34,8 +44,8 @@ export interface BuildingDef {
   incomePerLevel: number;
   /** Price of the first level. Every level after costs `BUILDING_COST_GROWTH`× more. */
   baseCost: number;
-  /** Which island the building sits on in the city scene. */
-  island: 'main' | 'east' | 'west';
+  /** Which island the building sits on — see `config/islands.ts`. */
+  island: IslandId;
   /** Position along that island's build slots (0 = leftmost). */
   slot: number;
   /**
@@ -178,6 +188,88 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'east',
     slot: 3,
     synergy: { from: 'aether-well', perLevel: 0.03 },
+  },
+
+  /* --- The high islands. Unlocked one band at a time by ascending. --- */
+  {
+    id: 'stormspire',
+    name: 'Stormspire',
+    flavor: 'Draws the weather up here to it, and keeps the change.',
+    incomePerLevel: 2.0e14,
+    baseCost: 5.0e14,
+    island: 'cirrus',
+    slot: 0,
+    synergy: { from: 'anchor-spire', perLevel: 0.03 },
+  },
+  {
+    id: 'frostworks',
+    name: 'Frostworks',
+    flavor: 'Cuts the cirrus into panes and ships them south.',
+    incomePerLevel: 2.6e15,
+    baseCost: 6.6e15,
+    island: 'cirrus',
+    slot: 1,
+    synergy: { from: 'foundry', perLevel: 0.03 },
+  },
+  {
+    id: 'heliostat',
+    name: 'Heliostat Array',
+    flavor: 'Follows a sun that never sets at this height.',
+    incomePerLevel: 3.4e16,
+    baseCost: 8.5e16,
+    island: 'stratos',
+    slot: 0,
+    synergy: { from: 'observatory', perLevel: 0.03 },
+  },
+  {
+    id: 'silent-vault',
+    name: 'Silent Vault',
+    flavor: 'Above the weather, nothing it stores ever spoils.',
+    incomePerLevel: 4.4e17,
+    baseCost: 1.1e18,
+    island: 'stratos',
+    slot: 1,
+    synergy: { from: 'skydock', perLevel: 0.03 },
+  },
+  {
+    id: 'aurora-font',
+    name: 'Aurora Font',
+    flavor: 'Taps the colour the sky refuses to account for.',
+    incomePerLevel: 5.7e18,
+    baseCost: 1.4e19,
+    island: 'aurora',
+    slot: 0,
+    synergy: { from: 'aether-well', perLevel: 0.04 },
+  },
+  {
+    id: 'prism-hall',
+    name: 'Prism Hall',
+    flavor: 'Splits the aurora into something you can weigh and sell.',
+    incomePerLevel: 7.4e19,
+    baseCost: 1.9e20,
+    island: 'aurora',
+    slot: 1,
+    synergy: { from: 'cloudloom', perLevel: 0.04 },
+  },
+  {
+    id: 'starwell',
+    name: 'Starwell',
+    flavor: 'Drops toward the dark until the stars are underfoot.',
+    incomePerLevel: 9.6e20,
+    baseCost: 2.4e21,
+    island: 'deepdark',
+    slot: 0,
+    synergy: { from: 'starforge', perLevel: 0.04 },
+  },
+  {
+    id: 'void-anchor',
+    name: 'Void Anchor',
+    flavor: 'Holds the whole climb steady against nothing at all.',
+    incomePerLevel: 1.25e22,
+    baseCost: 3.2e22,
+    island: 'deepdark',
+    slot: 1,
+    synergy: { from: 'anchor-spire', perLevel: 0.04 },
   },
 ];
 

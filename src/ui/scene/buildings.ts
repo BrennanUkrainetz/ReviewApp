@@ -1,7 +1,7 @@
 /**
  * The buildings — one spec each, drawn by the kit.
  *
- * There are twelve tiers and two hundred levels per tier, so these are
+ * There are twenty tiers and two hundred levels per tier, so these are
  * composed from the primitives in `kit.ts` rather than drawn one at a time.
  * What distinguishes a building is its proportions, its roof, and its one
  * `feature`: the Windmill's blades, the Lighthouse's beam, the Greenhouse's
@@ -136,6 +136,52 @@ const SPECS: Record<string, BuildingSpec> = {
     width: 22,
     height: 96,
     taper: 0.45,
+    roof: 'stepped',
+    feature: 'anchor',
+    columns: 2,
+  },
+
+  // The high islands: taller, narrower, more austere the further the city
+  // climbs — the skyline keeps rising as the ladder does.
+  stormspire: {
+    width: 20,
+    height: 88,
+    taper: 0.44,
+    roof: 'stepped',
+    feature: 'beam',
+    columns: 1,
+  },
+  frostworks: { width: 28, height: 56, taper: 0.2, roof: 'peak', feature: 'glass', columns: 2 },
+  heliostat: {
+    width: 26,
+    height: 52,
+    taper: 0.18,
+    roof: 'dome',
+    feature: 'telescope',
+    columns: 2,
+  },
+  'silent-vault': {
+    width: 30,
+    height: 48,
+    taper: 0.12,
+    roof: 'flat',
+    feature: 'well',
+    columns: 3,
+  },
+  'aurora-font': {
+    width: 28,
+    height: 60,
+    taper: 0.22,
+    roof: 'stepped',
+    feature: 'loom',
+    columns: 3,
+  },
+  'prism-hall': { width: 30, height: 50, taper: 0.16, roof: 'peak', feature: 'glass', columns: 3 },
+  starwell: { width: 24, height: 58, taper: 0.14, roof: 'flat', feature: 'well', columns: 2 },
+  'void-anchor': {
+    width: 22,
+    height: 100,
+    taper: 0.46,
     roof: 'stepped',
     feature: 'anchor',
     columns: 2,

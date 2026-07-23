@@ -6,6 +6,7 @@
  * data these read lives in `config/shop.ts` and `config/tuning.ts`; the balance
  * rationale is written up at the top of `config/shop.ts`.
  */
+import { islandUnlockAscension } from '@/config/islands';
 import { BUILDINGS, getBuilding, type BuildingDef } from '@/config/shop';
 import {
   BUILDING_COST_GROWTH,
@@ -160,36 +161,57 @@ export function marginalOutput(
   return cityOutput(next, mods) - current;
 }
 
+/** Is a building's island reachable at this ascension count? */
+function islandUnlocked(def: BuildingDef, ascensions: number): boolean {
+  return ascensions >= islandUnlockAscension(def.island);
+}
+
 /**
  * Buildings the shop should show: everything already standing, plus every tier
- * *this run's* earnings have brought within reach. Always at least the first
- * one, so a brand new city has something to buy.
+ * that is both on a reachable island and within reach of `runLumen`. Always at
+ * least the first one, so a brand new city has something to buy.
  *
- * Keyed off the run rather than the all-time total on purpose — after an
- * ascension the ladder re-reveals as you climb it, so there is always exactly
- * one tempting locked tier instead of twelve unlocked ones and no shape.
+ * Two gates, not one. Earnings reveal a tier the usual way — after an ascension
+ * the ladder re-reveals as you climb it, so there is always exactly one tempting
+ * locked tier instead of a wall of them. The high-island tiers add a second
+ * gate on top: no amount of Lumen shows a tier standing on an island the city
+ * has not yet ascended to, because there would be nowhere to put it.
  */
 export function revealedBuildings(
   buildings: readonly OwnedBuilding[],
   runLumen: number,
+  ascensions = 0,
 ): BuildingDef[] {
   const owned = new Set(
     buildings.filter((entry) => entry.level > 0).map((entry) => entry.id),
   );
   const revealed = BUILDINGS.filter(
-    (def) => owned.has(def.id) || runLumen >= def.baseCost * BUILDING_REVEAL_FRACTION,
+    (def) =>
+      owned.has(def.id) ||
+      (islandUnlocked(def, ascensions) &&
+        runLumen >= def.baseCost * BUILDING_REVEAL_FRACTION),
   );
   const first = BUILDINGS[0];
   return revealed.length > 0 || !first ? revealed : [first];
 }
 
-/** The cheapest unrevealed tier, for the "next unlock" line under the grid. */
+/**
+ * The cheapest unrevealed tier that is *earnable* — on a reachable island but
+ * not yet afforded — for the "next unlock" line under the grid. A tier locked
+ * only by altitude is skipped: that carrot belongs to the Ascension screen and
+ * the pager, not the shop's Lumen line.
+ */
 export function nextLockedBuilding(
   buildings: readonly OwnedBuilding[],
   runLumen: number,
+  ascensions = 0,
 ): BuildingDef | null {
-  const shown = new Set(revealedBuildings(buildings, runLumen).map((def) => def.id));
-  return BUILDINGS.find((def) => !shown.has(def.id)) ?? null;
+  const shown = new Set(
+    revealedBuildings(buildings, runLumen, ascensions).map((def) => def.id),
+  );
+  return (
+    BUILDINGS.find((def) => !shown.has(def.id) && islandUnlocked(def, ascensions)) ?? null
+  );
 }
 
 /** Convenience for screens that only have an id to hand. */

@@ -7,6 +7,13 @@
  * that the browser transitions across the whole picture. Buildings are the one
  * part that gets re-rendered, and only when the owned set actually changes.
  */
+import {
+  islandById,
+  nextLockedPage,
+  PAGE_WIDTH,
+  unlockedPages,
+  type IslandSpec,
+} from '@/config/islands';
 import { getBuilding, getCosmetic } from '@/config/shop';
 import type { AerieState } from '@/state/types';
 import type { Store } from '@/state/store';
@@ -15,69 +22,8 @@ import { hearthHall, renderBuilding } from './buildings';
 import { renderCosmetic, SLOT_DEPTH } from './cosmetics';
 import { paletteFor, paletteToCssVars, streakProgress } from './palette';
 
-const VIEW_WIDTH = 1200;
+const VIEW_WIDTH = PAGE_WIDTH;
 const VIEW_HEIGHT = 660;
-
-interface IslandSpec {
-  id: 'main' | 'west' | 'east';
-  cx: number;
-  cy: number;
-  rx: number;
-  /** Ground points for shop buildings, in scene coordinates. */
-  slots: { x: number; y: number }[];
-  /** Seconds per bob cycle — deliberately different so they never sync up. */
-  driftDuration: number;
-}
-
-/**
- * Four slots per island, staggered in depth rather than lined up in a row.
- * Listed back to front: the draw order below sorts on `y`, so a building on a
- * nearer slot overlaps one behind it and the cluster reads as a skyline
- * instead of a shelf.
- */
-const ISLANDS: IslandSpec[] = [
-  {
-    id: 'west',
-    cx: 235,
-    cy: 322,
-    rx: 118,
-    // Pulled in from the island's true edges — a heavily-levelled building
-    // grows side wings, and those must not hang out over open sky.
-    slots: [
-      { x: 208, y: 300 },
-      { x: 270, y: 308 },
-      { x: 178, y: 322 },
-      { x: 246, y: 330 },
-    ],
-    driftDuration: 19,
-  },
-  {
-    id: 'main',
-    cx: 600,
-    cy: 430,
-    rx: 192,
-    slots: [
-      { x: 540, y: 404 },
-      { x: 664, y: 412 },
-      { x: 468, y: 430 },
-      { x: 716, y: 442 },
-    ],
-    driftDuration: 23,
-  },
-  {
-    id: 'east',
-    cx: 958,
-    cy: 486,
-    rx: 138,
-    slots: [
-      { x: 934, y: 460 },
-      { x: 1000, y: 470 },
-      { x: 902, y: 484 },
-      { x: 982, y: 496 },
-    ],
-    driftDuration: 27,
-  },
-];
 
 /** Small deterministic PRNG so the starfield is identical on every load. */
 function mulberry32(seed: number): () => number {
@@ -347,11 +293,40 @@ function describeScene(state: AerieState, progress: number): string {
   return `The floating city of Aerie, ${light} at a ${state.streak.current}-day streak. ${built}`;
 }
 
+/** A pager arrow's chevron, as a standalone inline SVG. */
+function chevron(dir: 'left' | 'right'): SVGElement {
+  return svg(
+    'svg',
+    { viewBox: '0 0 24 24', class: 'scene-pager__icon', 'aria-hidden': 'true' },
+    svg('path', {
+      d: dir === 'left' ? 'M15 5 L8 12 L15 19' : 'M9 5 L16 12 L9 19',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': 2.5,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  );
+}
+
 export function createCityScene(store: Store): CityScene {
   const buildingLayer = svg('g', { class: 'scene__buildings' });
+  const islandsLayer = svg('g', { class: 'scene__islands' });
   const backCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--back' });
   const frontCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--front' });
   const sunGroup = sun();
+
+  // Everything that pans between pages lives in one group. The sky behind it
+  // (stars, sun, the far and mid cloud bands) and the near cloud band in front
+  // stay put, so paging reads as the city sliding past a fixed sky.
+  const world = svg(
+    'g',
+    { class: 'scene__world' },
+    backCosmetics,
+    islandsLayer,
+    buildingLayer,
+    frontCosmetics,
+  );
 
   const canvas = svg(
     'svg',
@@ -386,12 +361,7 @@ export function createCityScene(store: Store): CityScene {
       0.5,
       140,
     ),
-    backCosmetics,
-    ...ISLANDS.map(island),
-    bridge({ x: 325, y: 330 }, { x: 445, y: 425 }),
-    bridge({ x: 760, y: 440 }, { x: 852, y: 486 }),
-    buildingLayer,
-    frontCosmetics,
+    world,
     cloudBand(
       'scene__cloud-band--near',
       [
@@ -407,7 +377,102 @@ export function createCityScene(store: Store): CityScene {
   const title = svg('title', {});
   canvas.insertBefore(title, canvas.firstChild);
 
-  const root = el('div', { class: 'scene' }, canvas as unknown as HTMLElement);
+  // The pager: two arrows and the name of the island you are looking at. Hidden
+  // entirely until there is more than one page, so a first-week city is never
+  // shown controls for sky it cannot reach.
+  const pageLabel = el('span', {
+    class: 'scene-pager__label',
+    attrs: { 'aria-live': 'polite' },
+  });
+  const prevBtn = el(
+    'button',
+    {
+      class: 'scene-pager__arrow scene-pager__arrow--prev',
+      attrs: { type: 'button', 'aria-label': 'Previous island' },
+      on: { click: () => go(-1) },
+    },
+    chevron('left'),
+  );
+  const nextBtn = el(
+    'button',
+    {
+      class: 'scene-pager__arrow scene-pager__arrow--next',
+      attrs: { type: 'button', 'aria-label': 'Next island' },
+      on: { click: () => go(1) },
+    },
+    chevron('right'),
+  );
+  const pager = el(
+    'nav',
+    { class: 'scene-pager', attrs: { 'aria-label': 'Islands' } },
+    prevBtn,
+    pageLabel,
+    nextBtn,
+  );
+
+  const root = el(
+    'div',
+    { class: 'scene' },
+    canvas as unknown as HTMLElement,
+    pager,
+  );
+
+  /** Which page is centred in the viewport. View-only — never persisted. */
+  let page = 0;
+
+  function applyWorld(): void {
+    world.style.transform = `translateX(${-page * PAGE_WIDTH}px)`;
+  }
+
+  function updatePager(): void {
+    const state = store.getState();
+    const pages = unlockedPages(state.ascension.count);
+    const count = pages.length;
+    // A page can vanish from under you only in tests/resets, never in normal
+    // play — ascension count doesn't fall — but clamp anyway.
+    if (page > count - 1) {
+      page = Math.max(0, count - 1);
+      applyWorld();
+    }
+
+    pager.hidden = count <= 1;
+    (prevBtn as HTMLButtonElement).disabled = page <= 0;
+    (nextBtn as HTMLButtonElement).disabled = page >= count - 1;
+    pageLabel.textContent = pages[page]?.name ?? '';
+
+    const locked = nextLockedPage(state.ascension.count);
+    nextBtn.title =
+      page >= count - 1 && locked ? `Ascend to reach ${locked.name}` : '';
+  }
+
+  function go(delta: number): void {
+    const count = unlockedPages(store.getState().ascension.count).length;
+    const next = Math.min(Math.max(page + delta, 0), count - 1);
+    if (next === page) return;
+    page = next;
+    applyWorld();
+    updatePager();
+  }
+
+  let renderedIslands: string | null = null;
+
+  function renderIslands(state: AerieState): void {
+    const pages = unlockedPages(state.ascension.count);
+    const signature = pages.map((p) => p.index).join(',');
+    if (signature === renderedIslands) return;
+    renderedIslands = signature;
+
+    while (islandsLayer.firstChild) islandsLayer.removeChild(islandsLayer.firstChild);
+
+    // Islands first, then every bridge on top of them, matching the original
+    // draw order where a bridge rests over the island edges it joins.
+    const bridges: SVGGElement[] = [];
+    for (const p of pages) {
+      for (const spec of p.islands) islandsLayer.appendChild(island(spec));
+      for (const b of p.bridges) bridges.push(bridge(b.from, b.to));
+    }
+    for (const b of bridges) islandsLayer.appendChild(b);
+  }
 
   // `null` rather than '' so the first pass runs even with nothing built yet —
   // the hearth hall still has to be placed.
@@ -423,26 +488,27 @@ export function createCityScene(store: Store): CityScene {
 
     while (buildingLayer.firstChild) buildingLayer.removeChild(buildingLayer.firstChild);
 
-    // The hearth is always there — the city is never empty.
+    // The hearth is always there — the city is never empty. It stands on the
+    // home page, so it pans away like everything else.
     buildingLayer.appendChild(placeAt(600, 418, hearthHall()));
 
-    /** Where a building stands, or `null` if its island or slot is unknown. */
-    const slotFor = (id: string): { x: number; y: number; island: number } | null => {
+    /** Where a building stands, in absolute scene coords, or `null` if unknown. */
+    const slotFor = (id: string): { x: number; y: number; cx: number } | null => {
       const def = getBuilding(id);
       if (!def) return null;
-      const island = ISLANDS.findIndex((candidate) => candidate.id === def.island);
-      const spec = ISLANDS[island];
-      const slot = spec?.slots[def.slot] ?? spec?.slots[0];
-      return slot ? { ...slot, island } : null;
+      const spec = islandById(def.island);
+      if (!spec) return null;
+      const slot = spec.slots[def.slot] ?? spec.slots[0];
+      return slot ? { x: slot.x, y: slot.y, cx: spec.cx } : null;
     };
 
-    // Sort back to front: island first, then depth within it, so a nearer
-    // building always overlaps the one behind rather than the other way round.
+    // Sort back to front by island (its centre x, so pages stay in order) then
+    // by depth within it, so a nearer building overlaps the one behind it.
     const owned = [...state.city.buildings].sort((a, b) => {
       const left = slotFor(a.id);
       const right = slotFor(b.id);
       if (!left || !right) return 0;
-      return left.island - right.island || left.y - right.y;
+      return left.cx - right.cx || left.y - right.y;
     });
 
     for (const entry of owned) {
@@ -494,12 +560,15 @@ export function createCityScene(store: Store): CityScene {
     sunGroup.setAttribute('transform', `translate(${sunX} ${sunY.toFixed(1)})`);
     sunGroup.setAttribute('opacity', palette.sunOpacity.toFixed(3));
 
+    renderIslands(state);
     renderBuildings(state);
     renderCosmetics(state);
+    updatePager();
     title.textContent = describeScene(state, progress);
     canvas.setAttribute('aria-label', title.textContent);
   }
 
+  applyWorld();
   render();
   const unsubscribe = store.subscribe(render);
 

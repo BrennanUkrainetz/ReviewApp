@@ -203,4 +203,29 @@ describe('shop reveals', () => {
     expect(nextLockedBuilding([], 0)?.id).toBe('windmill');
     expect(nextLockedBuilding([], Number.MAX_SAFE_INTEGER)).toBeNull();
   });
+
+  it('hides a high-island tier until the city has ascended into its band', () => {
+    // Ample Lumen — the only thing keeping Stormspire hidden is altitude.
+    const rich = Number.MAX_SAFE_INTEGER;
+    expect(revealedBuildings([], rich, 0).map((def) => def.id)).not.toContain(
+      'stormspire',
+    );
+
+    const atCirrus = revealedBuildings([], rich, 1).map((def) => def.id);
+    expect(atCirrus).toContain('stormspire'); // Cirrus unlocks at ascension 1
+    expect(atCirrus).not.toContain('heliostat'); // Stratosphere is a band higher
+  });
+
+  it('still shows a high-island tier already standing, whatever the altitude', () => {
+    const ids = revealedBuildings([{ id: 'stormspire', level: 1 }], 0, 0).map(
+      (def) => def.id,
+    );
+    expect(ids).toContain('stormspire');
+  });
+
+  it('never aims the Lumen carrot at a tier locked only by altitude', () => {
+    // Rich enough to reveal every home tier; the eight above need an ascension,
+    // so the shop's Lumen line has nothing left to point at.
+    expect(nextLockedBuilding([], Number.MAX_SAFE_INTEGER, 0)).toBeNull();
+  });
 });

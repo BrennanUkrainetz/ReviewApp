@@ -272,3 +272,40 @@ Charges come only from completing a review and are stamped with the day, so
 there is never anything to come back and farm. The app stays pulled rather than
 pushed (spec §13) — motes are a bright window on the far side of the work, not
 a reason to open the app instead of doing it.
+
+## The islands are paged, and the ladder climbs past the home cluster
+
+The scene used to hold all three islands at once. When Brennan asked (July
+2026) to keep growing the economy, the ladder ran out of ground: twelve tiers
+fill three islands of four slots exactly, and cramming more onto the same view
+would have turned the opening picture into a shelf of towers.
+
+So the scene became a strip you pan across. The home cluster is page 0 and is
+unchanged, pixel for pixel — the view that greets a first-week city is the one
+it always was. Every page after it is a single high island that only appears
+once an ascension has carried the city into the matching altitude band
+(`config/islands.ts`): page N unlocks at ascension N, mapping one-to-one onto
+the bands already named in `config/ascension.ts`. The left/right arrows pan
+across exactly the sky you have climbed to, and the pager hides itself entirely
+until there is more than one page, so nothing advertises sky you cannot reach.
+
+The geometry moved out of the scene and into `config/islands.ts` because two
+places now need it: the scene draws the islands, and the economy has to know
+which ascension a building's island unlocks at. That second reader is the point
+of the second gate. `revealedBuildings` already hid a tier until earnings came
+within reach of it; the high tiers add an altitude gate on top, so no amount of
+Lumen shows a building standing on an island the city has not ascended to —
+there would be nowhere to put it. The shop's Lumen carrot skips altitude-locked
+tiers on purpose: that carrot belongs to the Ascension screen and the pager.
+
+The eight new tiers continue the ladder's own arithmetic — 13× spacing, ~2.5-day
+payback — straight past what float64 holds exactly. That is fine and always was:
+`bignum.ts` shows nothing to more than three significant figures, and now falls
+back to scientific notation past its named scale, so the number stays readable
+however far the city climbs. The one rail that makes the steepening safe is
+unchanged: the city only pays on days a review is completed, so every tier added
+on top is one more reason not to break the chain.
+
+Paging is view-only — the page you are looking at is not saved. There is no new
+persisted state and so no migration; a building is still `{ id, level }`, and
+which island it stands on is a fact about the catalogue, not the save.

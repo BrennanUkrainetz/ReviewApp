@@ -4,6 +4,7 @@
  * Transactions are instant and there is nothing irreversible to confirm —
  * buying is the whole interaction, so it should cost one click.
  */
+import { nextLockedPage } from '@/config/islands';
 import { COSMETICS, type BuildingDef, type CosmeticDef } from '@/config/shop';
 import { BUILDING_MAX_LEVEL } from '@/config/tuning';
 import { formatBig, formatMultiplier } from '@/domain/bignum';
@@ -272,18 +273,37 @@ export function createShopScreen(ctx: AppContext): Screen {
       value === 'max' ? 'Max' : `×${value}`,
     );
 
-  /** "Next: Skydock, at 6.8B lifetime Lumen" — one carrot, never a wall of them. */
+  /**
+   * One carrot under the grid, never a wall of them. An earnable tier is quoted
+   * by its Lumen price; when those run out but higher islands remain, the carrot
+   * becomes the next altitude to ascend to instead.
+   */
   function lockedLine(state: AerieState): HTMLElement | null {
-    const next = nextLockedBuilding(state.city.buildings, state.currency.lifetimeLumen);
-    if (!next) return null;
+    const next = nextLockedBuilding(
+      state.city.buildings,
+      state.currency.lifetimeLumen,
+      state.ascension.count,
+    );
+    if (next) {
+      return el(
+        'p',
+        { class: 'shop__locked' },
+        'Next to unlock: ',
+        el('strong', {}, next.name),
+        ', once you have earned ',
+        el('span', { class: 'num' }, formatBig(next.baseCost * 0.4)),
+        ' Lumen in total.',
+      );
+    }
+
+    const higher = nextLockedPage(state.ascension.count);
+    if (!higher) return null;
     return el(
       'p',
       { class: 'shop__locked' },
-      'Next to unlock: ',
-      el('strong', {}, next.name),
-      ', once you have earned ',
-      el('span', { class: 'num' }, formatBig(next.baseCost * 0.4)),
-      ' Lumen in total.',
+      'Higher tiers wait above the cloud shelf — ascend into ',
+      el('strong', {}, higher.name),
+      ' to build there.',
     );
   }
 
@@ -304,7 +324,11 @@ export function createShopScreen(ctx: AppContext): Screen {
           : 'Buildings pay out on days you complete a review — and only on those days.';
       replaceChildren(amountRail, ...BUY_AMOUNTS.map(amountButton));
       amountRail.hidden = false;
-      const shown = revealedBuildings(state.city.buildings, state.currency.lifetimeLumen);
+      const shown = revealedBuildings(
+        state.city.buildings,
+        state.currency.lifetimeLumen,
+        state.ascension.count,
+      );
       replaceChildren(
         grid,
         ...shown.map((def) => buildingCard(def, state)),

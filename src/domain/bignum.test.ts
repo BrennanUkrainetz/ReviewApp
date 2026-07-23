@@ -21,6 +21,17 @@ describe('formatBig', () => {
     expect(formatBig(999_999_999)).toBe('1.00B');
   });
 
+  it('keeps a suffix deep into the range the high islands reach', () => {
+    expect(formatBig(2.4e21)).toBe('2.40Sx');
+    expect(formatBig(1e36)).toBe('1.00Ud');
+    expect(formatBig(1e63)).toBe('1.00Vg');
+  });
+
+  it('falls back to scientific notation past the named scale', () => {
+    expect(formatBig(1e66)).toBe('1.00e+66');
+    expect(formatBig(1.23e69)).toBe('1.23e+69');
+  });
+
   it('handles negatives and non-numbers without producing nonsense', () => {
     expect(formatBig(-12_400)).toBe('-12.4K');
     expect(formatBig(Number.NaN)).toBe('—');
