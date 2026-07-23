@@ -108,6 +108,76 @@
   will-change: transform;
 }
 
+/*
+ * The heat layer — a warm glow and rising embers, driven entirely by `--heat`
+ * (set by the scene from the full-clear combo, not the streak). Cold, the whole
+ * layer is transparent; at a running combo it lights the base of the city.
+ */
+.scene__heat {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--heat, 0);
+  transition: opacity var(--duration-scene) var(--ease-in-out-soft);
+}
+
+.scene__heat-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    130% 92% at 50% 108%,
+    color-mix(in srgb, var(--amber) 55%, transparent) 0%,
+    color-mix(in srgb, var(--amber) 22%, transparent) 34%,
+    transparent 66%
+  );
+  mix-blend-mode: screen;
+}
+
+.scene__ember {
+  position: absolute;
+  bottom: -10px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--amber) 82%, #fff);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--amber) 65%, transparent);
+  opacity: 0;
+  animation: ember-rise var(--ember-dur, 6s) var(--ease-out-soft) infinite;
+  animation-delay: var(--ember-delay, 0s);
+}
+
+@keyframes ember-rise {
+  0% {
+    transform: translate(0, 0) scale(0.6);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate(var(--ember-drift, 0), calc(-1 * var(--ember-rise, 220px)))
+      scale(1);
+    opacity: 0;
+  }
+}
+
+/*
+ * Embers are motion, not information — the glow already carries the heat. With
+ * motion reduced, drop them and keep the static warm wash.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .scene__ember {
+    display: none;
+  }
+}
+
+html[data-reduce-motion='true'] .scene__ember {
+  display: none;
+}
+
 /* The pager overlays the top of the scene: two arrows and the island's name. */
 .scene-pager {
   position: absolute;

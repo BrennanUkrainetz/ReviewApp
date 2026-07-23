@@ -152,11 +152,31 @@ function chestArt(): SVGSVGElement {
   );
 }
 
-function lumenRow(label: string, amount: number, muted = false): HTMLElement {
+/**
+ * One payout line. A `crit` row is a bonus that landed on top of the ordinary
+ * review payout — a milestone or a contract — and gets the emphasis to match:
+ * the number pops and wears a "Critical" tag, so a rare payout reads as one.
+ */
+function lumenRow(
+  label: string,
+  amount: number,
+  opts: { muted?: boolean; crit?: boolean } = {},
+): HTMLElement {
   return el(
     'li',
-    { class: ['chest-loot__row', muted && 'chest-loot__row--muted'] },
-    el('span', {}, label),
+    {
+      class: [
+        'chest-loot__row',
+        opts.muted && 'chest-loot__row--muted',
+        opts.crit && 'chest-loot__row--crit',
+      ],
+    },
+    el(
+      'span',
+      { class: 'chest-loot__label' },
+      label,
+      opts.crit ? el('span', { class: 'chest-loot__crit-tag' }, 'Critical') : null,
+    ),
     el('span', { class: 'num chest-loot__amount' }, `+${formatBig(amount)}`),
   );
 }
@@ -240,11 +260,14 @@ export function createChestSequence({
         lumenRow(
           reward.milestone?.kind === 'big' ? 'Milestone bonus' : 'Streak bonus',
           reward.bonusLumen,
+          { crit: true },
         ),
       );
     }
     if (contract && reward.contractLumen > 0) {
-      rows.appendChild(lumenRow(`Contract · ${contract.name}`, reward.contractLumen));
+      rows.appendChild(
+        lumenRow(`Contract · ${contract.name}`, reward.contractLumen, { crit: true }),
+      );
     }
 
     loot.removeAttribute('hidden');

@@ -15,6 +15,9 @@ import {
   type IslandSpec,
 } from '@/config/islands';
 import { getBuilding, getCosmetic } from '@/config/shop';
+import { HEAT_CAP_DAYS } from '@/config/tuning';
+import { today } from '@/domain/dates';
+import { heatDays } from '@/domain/heat';
 import type { AerieState } from '@/state/types';
 import type { Store } from '@/state/store';
 import { el, svg } from '../dom';
@@ -309,6 +312,55 @@ function chevron(dir: 'left' | 'right'): SVGElement {
   );
 }
 
+/**
+ * The heat layer: a warm glow low on the scene and a field of embers rising
+ * off the city. Its whole opacity is driven by `--heat`, so it is invisible
+ * cold and grows with the full-clear combo. This is the one place in the scene
+ * that answers to heat rather than the streak — the streak lights the sky, the
+ * combo sets it alight.
+ */
+function buildHeatLayer(): HTMLElement {
+  const layer = el('div', { class: 'scene__heat', attrs: { 'aria-hidden': 'true' } });
+  layer.appendChild(el('div', { class: 'scene__heat-glow' }));
+  const EMBERS = 18;
+  for (let i = 0; i < EMBERS; i += 1) {
+    // Deterministic spread — no `Math.random`, so the field is identical every
+    // load and never jitters between renders.
+    const left = (i * 53 + 7) % 100;
+    const size = 2 + (i % 3);
+    const dur = 4 + (i % 5) * 0.9;
+    const delay = (i % 7) * 0.7;
+    const drift = ((i % 5) - 2) * 14;
+    const rise = 180 + (i % 4) * 40;
+    layer.appendChild(
+      el('span', {
+        class: 'scene__ember',
+        style: {
+          left: `${left}%`,
+          width: `${size}px`,
+          height: `${size}px`,
+          '--ember-dur': `${dur}s`,
+          '--ember-delay': `${delay}s`,
+          '--ember-drift': `${drift}px`,
+          '--ember-rise': `${rise}px`,
+        },
+      }),
+    );
+  }
+  return layer;
+}
+
+/**
+ * Scene heat, 0–1. Zero cold; from the first full-clear day it jumps to a
+ * clearly-visible floor and climbs to full at the cap, so the combo reads at a
+ * glance rather than easing in imperceptibly.
+ */
+function heatIntensity(state: AerieState): number {
+  const days = heatDays(state.history, today());
+  if (days <= 0) return 0;
+  return 0.35 + 0.65 * (Math.min(days, HEAT_CAP_DAYS) / HEAT_CAP_DAYS);
+}
+
 export function createCityScene(store: Store): CityScene {
   const buildingLayer = svg('g', { class: 'scene__buildings' });
   const islandsLayer = svg('g', { class: 'scene__islands' });
@@ -410,10 +462,13 @@ export function createCityScene(store: Store): CityScene {
     nextBtn,
   );
 
+  const heatLayer = buildHeatLayer();
+
   const root = el(
     'div',
     { class: 'scene' },
     canvas as unknown as HTMLElement,
+    heatLayer,
     pager,
   );
 
@@ -559,6 +614,8 @@ export function createCityScene(store: Store): CityScene {
     const sunY = VIEW_HEIGHT * (1.02 - palette.sunRise * 0.86);
     sunGroup.setAttribute('transform', `translate(${sunX} ${sunY.toFixed(1)})`);
     sunGroup.setAttribute('opacity', palette.sunOpacity.toFixed(3));
+
+    root.style.setProperty('--heat', heatIntensity(state).toFixed(3));
 
     renderIslands(state);
     renderBuildings(state);

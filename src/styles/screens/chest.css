@@ -39,6 +39,8 @@
   --chest-edge: #2a2436;
   --chest-beam: #b9e6e1;
   --chest-aura: color-mix(in srgb, var(--mist) 40%, transparent);
+  /* How far the burst throws — a rarer chest opens bigger. See spark-fly. */
+  --burst-scale: 1;
 
   display: flex;
   flex-direction: column;
@@ -52,6 +54,7 @@
   --chest-trim: #f5a94e;
   --chest-beam: #ffe0a8;
   --chest-aura: color-mix(in srgb, var(--amber) 45%, transparent);
+  --burst-scale: 1.22;
 }
 
 .reward[data-kind='big-milestone'] .chest {
@@ -59,6 +62,13 @@
   --chest-trim: #ffd9a0;
   --chest-beam: #fff3d6;
   --chest-aura: color-mix(in srgb, #ffd9a0 60%, transparent);
+  --burst-scale: 1.55;
+}
+
+/* A rare chest also carries its own warm halo, on top of the drop shadow. */
+.reward[data-kind='big-milestone'] .chest__art {
+  filter: drop-shadow(0 18px 30px rgb(4 12 28 / 55%))
+    drop-shadow(0 0 22px color-mix(in srgb, var(--amber) 55%, transparent));
 }
 
 .chest__eyebrow {
@@ -194,7 +204,11 @@
     opacity: 1;
   }
   100% {
-    transform: translate(var(--spark-dx), -54px) scale(1);
+    transform: translate(
+        calc(var(--spark-dx) * var(--burst-scale, 1)),
+        calc(-54px * var(--burst-scale, 1))
+      )
+      scale(1);
     opacity: 0;
   }
 }
@@ -227,7 +241,7 @@
     box-shadow: 0 0 0 0 var(--chest-aura);
   }
   100% {
-    box-shadow: 0 0 0 90px transparent;
+    box-shadow: 0 0 0 calc(90px * var(--burst-scale, 1)) transparent;
   }
 }
 
@@ -288,6 +302,51 @@
 
 .chest-loot__amount {
   color: var(--color-text);
+}
+
+/*
+ * A crit row — a milestone or contract bonus stacked on the review payout. The
+ * number pops on reveal and the row wears a tag, so a bonus reads as a bonus.
+ */
+.chest-loot__label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.chest-loot__crit-tag {
+  margin-left: var(--space-2);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--dusk-deep);
+  background: var(--amber);
+  animation: crit-pop 620ms var(--ease-out-soft) 200ms both;
+}
+
+.chest-loot__row--crit .chest-loot__amount {
+  display: inline-block;
+  color: var(--amber);
+  font-weight: 700;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 55%, transparent);
+  animation: crit-pop 620ms var(--ease-out-soft) 120ms both;
+}
+
+@keyframes crit-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .chest-loot__cosmetic {

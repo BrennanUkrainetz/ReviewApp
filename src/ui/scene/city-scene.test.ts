@@ -5,15 +5,33 @@
  */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { today } from '@/domain/dates';
 import { createInitialState } from '@/state/defaults';
 import { setStorageBackend } from '@/state/storage';
 import { createStore, type Store } from '@/state/store';
+import type { DayRecord } from '@/state/types';
 import { createCityScene } from './city-scene';
 
 /** A store whose city has ascended `count` times, unlocking `count` high pages. */
 function storeAt(count: number): Store {
   const base = createInitialState(new Date(2026, 6, 22));
   return createStore({ ...base, ascension: { ...base.ascension, count } });
+}
+
+/** A day, today, on which a review was full-cleared — one day of heat. */
+function fullClearToday(): DayRecord {
+  return {
+    date: today(),
+    morning: {
+      completed: true,
+      tier: 'full',
+      pointsEarned: 12,
+      lumenEarned: 120,
+      doneItemIds: [],
+    },
+    daily: null,
+    dayOff: false,
+  };
 }
 
 const q = <T extends Element>(root: HTMLElement, sel: string): T =>
@@ -80,6 +98,24 @@ describe('the city pager', () => {
     prev.click();
     expect(world.style.transform).toBe('translateX(-1200px)');
     expect(next.disabled).toBe(false);
+    scene.destroy();
+  });
+});
+
+describe('the heat layer', () => {
+  it('is present but cold with no full-clear combo running', () => {
+    const scene = createCityScene(storeAt(0));
+    expect(scene.el.querySelector('.scene__heat')).not.toBeNull();
+    expect(scene.el.querySelectorAll('.scene__ember').length).toBeGreaterThan(0);
+    expect(scene.el.style.getPropertyValue('--heat')).toBe('0.000');
+    scene.destroy();
+  });
+
+  it('lights up when a combo is running today', () => {
+    const base = createInitialState(new Date(2026, 6, 22));
+    const store = createStore({ ...base, history: [fullClearToday()] });
+    const scene = createCityScene(store);
+    expect(Number(scene.el.style.getPropertyValue('--heat'))).toBeGreaterThan(0);
     scene.destroy();
   });
 });

@@ -309,3 +309,34 @@ on top is one more reason not to break the chain.
 Paging is view-only — the page you are looking at is not saved. There is no new
 persisted state and so no migration; a building is still `{ id, level }`, and
 which island it stands on is a fact about the catalogue, not the save.
+
+## Juice answers to heat, and a bonus reads as a bonus
+
+Phase 5 was the "make it feel good" pass, and the constraint on it was the same
+one the whole app carries: it must not become a thing you watch during the day.
+Three pieces, each tied to something that already happened rather than invented
+motion for its own sake.
+
+**The scene has a heat layer, and heat is the one thing that lights it.** The
+streak lights the *sky* (palette); the full-clear combo lights the *city* — a
+warm glow low on the islands and embers rising off them, the whole layer's
+opacity driven by a single `--heat` variable the scene sets from
+`heatDays(...)`. They are deliberately separate signals: showing up warms the
+dawn, finishing the job sets the place alight. Heat is derived from history, so
+the visual needs no new state — it is a read, not a store. `--heat` jumps to a
+visible floor on the first full-clear day rather than easing in from nothing, so
+the combo reads at a glance. The embers are motion and the glow is information:
+under reduced motion the embers are dropped and the static wash stays.
+
+**Milestone and contract payouts are crits.** Those two are bonuses stacked on
+the ordinary review payout — the rare part of a chest — so they get the emphasis
+to match: the number pops and the row wears a "Critical" tag. The review payout
+never crits, because it is the baseline, not the surprise. The distinction is
+data (`{ crit: true }` on the row), not a hand-marked class per call site, so a
+new bonus row opts in the same way.
+
+**A rarer chest opens bigger, not just differently coloured.** The tier already
+set the chest's colours; it now also sets `--burst-scale`, which the spark throw
+and the aura ring multiply through, and the beacon chest carries its own warm
+halo. One variable, so the burst scales with rarity without a second copy of the
+open animation.
