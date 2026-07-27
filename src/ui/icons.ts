@@ -25,13 +25,35 @@ export const iconLumen = (): string =>
       fill="currentColor" fill-opacity="0.22" />
   `);
 
-export const iconCheck = (): string => wrap('<path d="M4.5 12.5 9.5 17.5 19.5 6.5" stroke-width="2" />');
+/** Upward chevrons over a diamond — Aether, and the Ascension screen. */
+export const iconAether = (): string =>
+  wrap(`
+    <path d="M12 2.8 16.4 8 12 13.2 7.6 8 12 2.8Z"
+      fill="currentColor" fill-opacity="0.22" />
+    <path d="M6.5 16.2 12 11.6l5.5 4.6M6.5 20.6 12 16l5.5 4.6" />
+  `);
+
+export const iconCheck = (): string =>
+  wrap('<path d="M4.5 12.5 9.5 17.5 19.5 6.5" stroke-width="2" />');
 
 export const iconSkip = (): string => wrap('<path d="M7 12h10M13 8l4 4-4 4" />');
 
 export const iconBack = (): string => wrap('<path d="M15 5l-7 7 7 7" />');
 
 export const iconClose = (): string => wrap('<path d="M6 6l12 12M18 6L6 18" />');
+
+export const iconArrowUp = (): string => wrap('<path d="M12 19V6M6 12l6-6 6 6" />');
+
+export const iconArrowDown = (): string => wrap('<path d="M12 5v13M6 12l6 6 6-6" />');
+
+export const iconPlus = (): string => wrap('<path d="M12 5.5v13M5.5 12h13" />');
+
+export const iconTrash = (): string =>
+  wrap(`
+    <path d="M4.5 7h15M9.5 7V5.5a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5V7" />
+    <path d="M6.5 7l.9 12.1a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7" />
+    <path d="M10.5 11v6M13.5 11v6" />
+  `);
 
 export const iconShop = (): string =>
   wrap(`
@@ -66,4 +88,27 @@ export const iconChest = (): string =>
   wrap(`
     <path d="M3.5 10.5A5 5 0 0 1 8.5 5.5h7a5 5 0 0 1 5 5V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19v-8.5Z" />
     <path d="M3.5 12.5h17M10.5 12.5v-2h3v2" />
+  `);
+
+/** A rising flame — Cinder, the quality currency. */
+export const iconCinder = (): string =>
+  wrap(`
+    <path d="M12 3.5c2.4 2.8 4.8 5 4.8 8.4a4.8 4.8 0 0 1-9.6 0c0-1.5.6-2.7 1.6-3.6.2 1 .8 1.7 1.7 2C11 8.7 10.4 6.3 12 3.5Z"
+      fill="currentColor" fill-opacity="0.22" />
+    <path d="M12 20.5a4.8 4.8 0 0 0 4.8-4.6" />
+  `);
+
+/** A vault door with a heavy hinge — the collection vault. */
+export const iconVault = (): string =>
+  wrap(`
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <circle cx="12" cy="12" r="4" fill="currentColor" fill-opacity="0.18" />
+    <path d="M12 8v-1.5M12 17.5V16M8 12H6.5M17.5 12H16" />
+  `);
+
+/** A gear tooth — the Workshop, where Cinder is spent. */
+export const iconWorkshop = (): string =>
+  wrap(`
+    <circle cx="12" cy="12" r="3.2" fill="currentColor" fill-opacity="0.18" />
+    <path d="M12 3.5v2.4M12 18.1v2.4M3.5 12h2.4M18.1 12h2.4M6 6l1.7 1.7M16.3 16.3 18 18M18 6l-1.7 1.7M7.7 16.3 6 18" />
   `);

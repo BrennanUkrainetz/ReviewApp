@@ -100,7 +100,11 @@ function skyWhale(): SVGGElement {
   return svg(
     'g',
     { class: 'scene-cosmetic scene-cosmetic--companion scene-companion--whale' },
-    svg('g', { class: 'scene-companion__drift' }, svg('g', { transform: 'scale(0.7)' }, body)),
+    svg(
+      'g',
+      { class: 'scene-companion__drift' },
+      svg('g', { transform: 'scale(0.7)' }, body),
+    ),
   );
 }
 
@@ -110,7 +114,11 @@ function paperKite(): SVGGElement {
     'g',
     {},
     svg('path', { d: 'M0 -18 L16 0 L0 22 L-16 0 Z', fill: 'var(--scene-roof)' }),
-    svg('path', { d: 'M0 -18 L0 22 M-16 0 L16 0', stroke: 'var(--scene-facade-shade)', 'stroke-width': 1.2 }),
+    svg('path', {
+      d: 'M0 -18 L0 22 M-16 0 L16 0',
+      stroke: 'var(--scene-facade-shade)',
+      'stroke-width': 1.2,
+    }),
     svg('path', {
       d: 'M0 22 q 10 12 -4 20 q -10 8 2 18',
       fill: 'none',

@@ -33,10 +33,62 @@
   font-size: var(--text-sm);
 }
 
+/* Buy-amount selector. Past the first few tiers a day's Lumen is worth dozens
+   of levels, so ×10 and Max are the buttons that get used, not ×1. */
+.shop__amounts {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.shop__amounts[hidden] {
+  display: none;
+}
+
+.chip {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.chip:hover {
+  color: var(--color-text);
+}
+
+.chip--active {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--cream);
+}
+
 .shop__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-4);
+}
+
+/* The one locked tier on show. Spans the grid so it reads as a footer to the
+   list rather than a card you can interact with. */
+.shop__locked {
+  grid-column: 1 / -1;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.shop__locked strong {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .shop-card {
@@ -85,6 +137,14 @@
 
 .shop-card__stat--muted {
   color: var(--color-text-muted);
+}
+
+/* Where a building's multipliers come from. Deliberately quiet — it's the
+   explanation, not the headline. */
+.shop-card__bonus {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
 }
 
 .shop-card__price {

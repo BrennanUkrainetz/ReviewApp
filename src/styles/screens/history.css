@@ -111,3 +111,64 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Achievements. Locked entries stay visible but unreadable-quiet: knowing a
+   badge exists is the pull; knowing exactly how to farm it is not. */
+.badges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.badges__summary {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.badges__summary .num {
+  color: var(--color-accent-soft);
+}
+
+.badges__group-name {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: var(--space-2);
+}
+
+.badges__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+}
+
+.badge-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  opacity: 0.5;
+}
+
+.badge-card--earned {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--amber) 35%, transparent);
+  background: color-mix(in srgb, var(--amber) 8%, var(--color-surface));
+}
+
+.badge-card__name {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.badge-card__detail {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}

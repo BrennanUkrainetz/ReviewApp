@@ -2,15 +2,28 @@
  * Every state transition the UI is allowed to make. Screens call these; they
  * never build a new `AerieState` themselves.
  */
-import { getChecklist } from '@/config/checklists';
-import { buildingCost, getBuilding, getCosmetic } from '@/config/shop';
-import { PASSIVE_INCOME_REQUIRES_REVIEW } from '@/config/tuning';
-import { today as todayKey, type DateKey } from '@/domain/dates';
+import { defaultItems } from '@/config/checklists';
+import { getPerk } from '@/config/perks';
+import { getResearch } from '@/config/research';
+import { BUILDINGS, getBuilding, getCosmetic } from '@/config/shop';
+import {
+  BUILDING_MAX_LEVEL,
+  MOTE_CHARGES_PER_REVIEW,
+  MOTE_FLOOR_LUMEN,
+  MOTE_SHARE_OF_OUTPUT,
+} from '@/config/tuning';
+import { today as todayKey } from '@/domain/dates';
+import { newlyEarned } from '@/domain/achievements';
+import { canAscend, modsFor, pendingAether } from '@/domain/ascension';
+import { contractBonus, contractFor, contractJustSettled } from '@/domain/contracts';
+import { heatDays, heatMultiplier } from '@/domain/heat';
+import { cinderFor } from '@/domain/research';
+import { affordableLevels, bulkCost, cityOutput } from '@/domain/economy';
+import { accrueVault, canCollect, windowsForState } from '@/domain/vault';
 import {
   buildReward,
   checkMilestones,
   defaultRng,
-  passiveIncome,
   type Reward,
   type Rng,
 } from '@/domain/rewards';
@@ -22,8 +35,9 @@ import {
   markDayOff,
   shouldAdvanceStreak,
 } from '@/domain/streak';
+import { checklistFor, sanitizeItems } from './checklists';
 import type { Store } from './store';
-import type { AerieState, DayRecord, ReviewId } from './types';
+import type { AerieState, ChecklistItem, DayRecord, ReviewId } from './types';
 
 export interface ReviewOutcome {
   reviewId: ReviewId;
@@ -33,6 +47,10 @@ export interface ReviewOutcome {
   streakAfter: number;
   /** False when the streak didn't move — a second review, or a partial. */
   advancedStreak: boolean;
+  /** Achievement ids this review earned, for the chest to announce. */
+  earnedAchievements: string[];
+  /** Cinder this review earned. Zero unless it was a full clear. */
+  cinderEarned: number;
 }
 
 function upsertDay(history: DayRecord[], day: DayRecord): DayRecord[] {
@@ -43,10 +61,71 @@ function upsertDay(history: DayRecord[], day: DayRecord): DayRecord[] {
   return next;
 }
 
-/** True once any review has been completed on `date`. */
-function hasCompletionOn(state: AerieState, date: DateKey): boolean {
-  const day = findDay(state.history, date);
-  return Boolean(day?.morning?.completed ?? day?.daily?.completed);
+/* ------------------------------------------------------------------ */
+/* The vault                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Folds elapsed city output into the vault. Idempotent and cheap, so screens
+ * call it on a timer and every other action calls it before doing anything that
+ * changes the city — accrual has to be banked at the *old* output rate before a
+ * new building starts paying.
+ */
+export function syncVault(store: Store, now: Date = new Date()): void {
+  store.update((state) => {
+    const vault = accrueVault(state, now);
+    return vault === state.vault ? state : { ...state, vault };
+  });
+}
+
+export interface CollectResult {
+  ok: true;
+  lumen: number;
+}
+
+/**
+ * Empties the vault into the balance. Refused outside a collection window, and
+ * refused twice in the same window — see `domain/vault.ts` for why that needs
+ * only one timestamp.
+ */
+export function collectVault(
+  store: Store,
+  now: Date = new Date(),
+): CollectResult | { ok: false; reason: string } {
+  syncVault(store, now);
+
+  const state = store.getState();
+  if (!canCollect(state.vault, now, windowsForState(state))) {
+    return { ok: false, reason: 'The vault is shut. Come back at the next window.' };
+  }
+
+  const lumen = state.vault.lumen;
+  if (lumen <= 0) return { ok: false, reason: 'Nothing in the vault yet.' };
+
+  store.update((current) => ({
+    ...current,
+    currency: {
+      ...current.currency,
+      lumen: current.currency.lumen + lumen,
+      runLumen: current.currency.runLumen + lumen,
+      lifetimeLumen: current.currency.lifetimeLumen + lumen,
+    },
+    vault: {
+      ...current.vault,
+      lumen: 0,
+      // The accrual clock restarts here. `accrueVault` deliberately leaves
+      // `accruedThrough` behind when a tick is worth nothing — including while
+      // the vault sits full — and without this reset that banked-up time would
+      // pour straight back in the instant the vault was emptied.
+      accruedThrough: now.getTime(),
+      carry: 0,
+      lastCollectedAt: now.getTime(),
+      lifetimeCollected: current.vault.lifetimeCollected + lumen,
+    },
+  }));
+
+  creditAchievements(store);
+  return { ok: true, lumen };
 }
 
 export interface CompleteReviewOptions {
@@ -65,34 +144,80 @@ export function completeReview(
   { now = new Date(), rng = defaultRng }: CompleteReviewOptions = {},
 ): ReviewOutcome {
   const date = todayKey(now);
+  // Bank what the city has produced so far before the review changes the rate
+  // it produces at.
+  syncVault(store, now);
   const before = store.getState();
 
-  const score = scoreReview(getChecklist(reviewId), doneItemIds);
+  const mods = modsFor(before);
+  const score = scoreReview(checklistFor(before, reviewId), doneItemIds);
   const advancedStreak = score.countsForStreak && shouldAdvanceStreak(before, date);
   const streakBefore = before.streak.current;
   const streakAfter = advancedStreak ? streakBefore + 1 : streakBefore;
 
-  const reviewLumen = lumenFor(score.points, streakAfter);
-  const firstOfDay = !hasCompletionOn(before, date);
-  const passiveLumen =
-    firstOfDay || !PASSIVE_INCOME_REQUIRES_REVIEW ? passiveIncome(before.city.buildings) : 0;
+  const reviewLumen = lumenFor(score.points, streakAfter, mods);
+  // What the city is worth per day. It is not paid here — the vault accrues it
+  // around the clock — but the milestone and contract shares are struck against
+  // it, so a large city still opens a large chest.
+  const passiveLumen = cityOutput(before.city.buildings, mods);
 
   // Milestones only fire on the day the streak actually moves.
   const { hit, milestones } = advancedStreak
     ? checkMilestones(before.milestones, streakAfter)
     : { hit: null, milestones: before.milestones };
 
+  // Heat is read from the history *including* today's result, since a full
+  // clear logged right now is what extends the combo.
+  const dayBefore = findDay(before.history, date);
+  const updatedDay: DayRecord = {
+    ...(dayBefore ?? emptyDay(date)),
+    [reviewId]: {
+      completed: true,
+      tier: score.tier,
+      pointsEarned: score.points,
+      lumenEarned: 0, // filled in below, once the reward is known
+      doneItemIds: score.doneItemIds,
+    },
+  };
+  const historyWithToday = upsertDay(before.history, updatedDay);
+  const heat = heatMultiplier(historyWithToday, date);
+
+  // Cinder — the quality currency. Only a full clear pays, and the second
+  // full clear of a day pays the perfect-day bonus. Struck against the heat as
+  // whole days (not the multiplier), so a long combo is worth more per clear.
+  const completesPerfectDay =
+    score.tier === 'full' &&
+    (reviewId === 'morning' ? dayBefore?.daily?.tier : dayBefore?.morning?.tier) === 'full';
+  const cinderEarned = cinderFor(
+    score.tier,
+    completesPerfectDay,
+    heatDays(historyWithToday, date),
+    mods.research,
+  );
+
+  // The contract pays on the review that settles it, and only that one.
+  const contract = contractFor(date);
+  const settled = contractJustSettled(contract, dayBefore, updatedDay);
+  const heatedBase = Math.round(reviewLumen * heat) + Math.round(passiveLumen * heat);
+
   const reward = buildReward({
     reviewLumen,
     passiveLumen,
+    heat,
+    contract: settled
+      ? { id: contract.id, bonus: contractBonus(contract, heatedBase) }
+      : null,
     milestone: hit,
     unlockedCosmetics: before.city.cosmetics.unlocked,
     rng,
+    mods,
   });
+
+  let earnedAchievements: string[] = [];
 
   store.update((state) => {
     const day = findDay(state.history, date) ?? emptyDay(date);
-    const updatedDay: DayRecord = {
+    const recordedDay: DayRecord = {
       ...day,
       [reviewId]: {
         completed: true,
@@ -105,9 +230,24 @@ export function completeReview(
 
     const withHistory: AerieState = {
       ...state,
-      history: upsertDay(state.history, updatedDay),
-      currency: { lumen: state.currency.lumen + reward.totalLumen },
+      history: upsertDay(state.history, recordedDay),
+      currency: {
+        ...state.currency,
+        lumen: state.currency.lumen + reward.totalLumen,
+        runLumen: state.currency.runLumen + reward.totalLumen,
+        lifetimeLumen: state.currency.lifetimeLumen + reward.totalLumen,
+        cinder: state.currency.cinder + cinderEarned,
+      },
       milestones,
+      // Finishing a review is what opens the mote window. Charges are stamped
+      // with the day so yesterday's never carry over.
+      motes: {
+        date,
+        remaining:
+          (state.motes.date === date ? state.motes.remaining : 0) +
+          MOTE_CHARGES_PER_REVIEW,
+        caught: state.motes.date === date ? state.motes.caught : 0,
+      },
       city: reward.cosmeticId
         ? {
             ...state.city,
@@ -119,10 +259,71 @@ export function completeReview(
         : state.city,
     };
 
-    return score.countsForStreak ? advanceStreak(withHistory, date) : withHistory;
+    const advanced = score.countsForStreak
+      ? advanceStreak(withHistory, date)
+      : withHistory;
+    earnedAchievements = newlyEarned(advanced);
+    return earnedAchievements.length > 0
+      ? { ...advanced, achievements: [...advanced.achievements, ...earnedAchievements] }
+      : advanced;
   });
 
-  return { reviewId, score, reward, streakBefore, streakAfter, advancedStreak };
+  return {
+    reviewId,
+    score,
+    reward,
+    streakBefore,
+    streakAfter,
+    advancedStreak,
+    earnedAchievements,
+    cinderEarned,
+  };
+}
+
+export interface MoteCatch {
+  ok: true;
+  lumen: number;
+  remaining: number;
+}
+
+/**
+ * Catches a drifting mote for a burst of Lumen.
+ *
+ * Worth a share of the city's daily output, so it stays meaningful at every
+ * scale without ever rivalling a review — three motes come to roughly half a
+ * day's city output, on a day that already paid a full one.
+ */
+export function catchMote(
+  store: Store,
+  now: Date = new Date(),
+): MoteCatch | { ok: false } {
+  const date = todayKey(now);
+  const state = store.getState();
+  if (state.motes.date !== date || state.motes.remaining <= 0) return { ok: false };
+
+  const mods = modsFor(state);
+  const lumen = Math.max(
+    MOTE_FLOOR_LUMEN,
+    Math.round(cityOutput(state.city.buildings, mods) * MOTE_SHARE_OF_OUTPUT),
+  );
+
+  store.update((current) => ({
+    ...current,
+    currency: {
+      ...current.currency,
+      lumen: current.currency.lumen + lumen,
+      runLumen: current.currency.runLumen + lumen,
+      lifetimeLumen: current.currency.lifetimeLumen + lumen,
+    },
+    motes: {
+      date,
+      remaining: current.motes.remaining - 1,
+      caught: current.motes.caught + 1,
+    },
+  }));
+
+  creditAchievements(store);
+  return { ok: true, lumen, remaining: state.motes.remaining - 1 };
 }
 
 /** Marks today as a deliberate day off. No-op if already marked. */
@@ -137,36 +338,229 @@ export function takeDayOff(store: Store, now: Date = new Date()): void {
     };
     return markDayOff(withHistory, date);
   });
+  creditAchievements(store);
 }
 
-export type PurchaseResult = { ok: true } | { ok: false; reason: string };
+/** Either it happened, or it didn't and there's a line to show the user. */
+export type ActionResult = { ok: true } | { ok: false; reason: string };
+export type PurchaseResult = ActionResult;
 
-/** Buys a building, or upgrades one already standing. */
-export function buyBuilding(store: Store, buildingId: string): PurchaseResult {
+export interface BuildResult {
+  ok: true;
+  /** Levels actually bought — a `max` buy asks for more than it can afford. */
+  levels: number;
+  spent: number;
+  newLevel: number;
+}
+
+export type BuildOutcome = BuildResult | { ok: false; reason: string };
+
+/**
+ * Buys `count` levels of a building, or as many as the balance covers when
+ * `count` is `'max'`.
+ *
+ * Bulk buying is not a convenience here, it's load-bearing: past the first
+ * couple of tiers a day's Lumen is worth dozens of levels, and clicking
+ * "Upgrade" forty times is not a game.
+ */
+export function buyBuilding(
+  store: Store,
+  buildingId: string,
+  count: number | 'max' = 1,
+): BuildOutcome {
   const def = getBuilding(buildingId);
   if (!def) return { ok: false, reason: 'Unknown building.' };
 
+  // Bank output at the old rate before the new level starts paying.
+  syncVault(store);
   const state = store.getState();
+  const mods = modsFor(state);
   const owned = state.city.buildings.find((entry) => entry.id === buildingId);
   const level = owned?.level ?? 0;
-  if (level >= def.maxLevel) return { ok: false, reason: 'Already at max level.' };
 
-  const cost = buildingCost(def, level);
-  if (state.currency.lumen < cost) return { ok: false, reason: 'Not enough Lumen.' };
+  const wanted = count === 'max' ? undefined : Math.max(1, Math.floor(count));
+  const levels = affordableLevels(def, level, state.currency.lumen, wanted, mods);
+  if (levels <= 0) {
+    return {
+      ok: false,
+      reason: level >= BUILDING_MAX_LEVEL ? 'Already at max level.' : 'Not enough Lumen.',
+    };
+  }
+
+  const spent = bulkCost(def, level, levels, mods);
 
   store.update((current) => ({
     ...current,
-    currency: { lumen: current.currency.lumen - cost },
+    currency: { ...current.currency, lumen: current.currency.lumen - spent },
     city: {
       ...current.city,
       buildings: owned
         ? current.city.buildings.map((entry) =>
-            entry.id === buildingId ? { ...entry, level: entry.level + 1 } : entry,
+            entry.id === buildingId ? { ...entry, level: entry.level + levels } : entry,
           )
-        : [...current.city.buildings, { id: buildingId, level: 1 }],
+        : [...current.city.buildings, { id: buildingId, level: levels }],
     },
   }));
 
+  creditAchievements(store);
+  return { ok: true, levels, spent, newLevel: level + levels };
+}
+
+export interface AscendResult {
+  ok: true;
+  /** Aether granted by the run just ended. */
+  aether: number;
+  /** The new ascension count, which is also the new altitude band. */
+  count: number;
+  /** Lumen carried through by the Unbroken perk, if any. */
+  carried: number;
+}
+
+export type AscendOutcome = AscendResult | { ok: false; reason: string };
+
+/**
+ * Ascends: the city climbs a band, the run resets, and the Aether it was worth
+ * is banked.
+ *
+ * What survives is the point of the whole mechanic, so it is spelled out
+ * rather than implied by what the reset happens to miss:
+ *
+ * - **Kept:** the streak, the whole history, days-off, milestone progress,
+ *   every unlocked cosmetic, and of course Aether and perks. The streak and
+ *   history are records of what actually happened; no in-game reset gets to
+ *   touch them.
+ * - **Reset:** Lumen (bar the Unbroken share), every building, the run total
+ *   that drives shop reveals, and whatever was sitting in the vault — it was
+ *   produced by buildings that no longer exist.
+ */
+export function ascend(store: Store, now: Date = new Date()): AscendOutcome {
+  // Anything already produced is banked (and then wiped with the rest) rather
+  // than left to accrue against a city that has gone.
+  syncVault(store, now);
+  const state = store.getState();
+  if (!canAscend(state)) {
+    return { ok: false, reason: 'Not enough lifetime Lumen to ascend yet.' };
+  }
+
+  const mods = modsFor(state);
+  const granted = pendingAether(state);
+  const carried = Math.floor(state.currency.lumen * mods.carryLumen);
+  const foothold = mods.foothold;
+
+  store.update((current) => ({
+    ...current,
+    currency: {
+      lumen: carried,
+      runLumen: 0,
+      lifetimeLumen: current.currency.lifetimeLumen,
+      // Cinder survives an ascension untouched, exactly as perks and Aether do.
+      cinder: current.currency.cinder,
+    },
+    ascension: {
+      count: current.ascension.count + 1,
+      aether: current.ascension.aether + granted,
+      aetherEarned: current.ascension.aetherEarned + granted,
+      perks: current.ascension.perks,
+    },
+    vault: { ...current.vault, accruedThrough: now.getTime(), lumen: 0, carry: 0 },
+    city: {
+      ...current.city,
+      // Cosmetics are found, not bought back — they stay unlocked and equipped.
+      buildings: foothold
+        ? BUILDINGS.slice(0, foothold.count).map((def) => ({
+            id: def.id,
+            level: foothold.level,
+          }))
+        : [],
+    },
+  }));
+
+  creditAchievements(store);
+  return { ok: true, aether: granted, count: state.ascension.count + 1, carried };
+}
+
+/**
+ * Re-checks achievements and credits anything newly earned.
+ *
+ * Called after every action that can earn one outside a review — building,
+ * ascending, learning a perk, catching a mote, dressing the city, editing a
+ * routine, taking a day off. `completeReview` does its own check inside its
+ * update so the chest can announce what it earned.
+ */
+export function creditAchievements(store: Store): string[] {
+  const earned = newlyEarned(store.getState());
+  if (earned.length === 0) return [];
+  store.update((state) => ({
+    ...state,
+    achievements: [...state.achievements, ...earned],
+  }));
+  return earned;
+}
+
+/** Spends Aether on a perk. Permanent — perks are never refunded or lost. */
+export function buyPerk(store: Store, perkId: string): PurchaseResult {
+  const def = getPerk(perkId);
+  if (!def) return { ok: false, reason: 'Unknown perk.' };
+
+  const state = store.getState();
+  const { perks, aether } = state.ascension;
+
+  if (perks.includes(perkId)) return { ok: false, reason: 'Already learned.' };
+  if (def.requires && !perks.includes(def.requires)) {
+    return {
+      ok: false,
+      reason: `${getPerk(def.requires)?.name ?? 'Something else'} comes first.`,
+    };
+  }
+  if (aether < def.cost) return { ok: false, reason: 'Not enough Aether.' };
+
+  store.update((current) => ({
+    ...current,
+    ascension: {
+      ...current.ascension,
+      aether: current.ascension.aether - def.cost,
+      perks: [...current.ascension.perks, perkId],
+    },
+  }));
+
+  creditAchievements(store);
+  return { ok: true };
+}
+
+/**
+ * Spends Cinder on a research node. Permanent — research is never refunded or
+ * lost, and survives an ascension. Buying it can change the vault's rules, so
+ * accrual is banked at the old rules first.
+ */
+export function buyResearch(store: Store, researchId: string): PurchaseResult {
+  const def = getResearch(researchId);
+  if (!def) return { ok: false, reason: 'Unknown research.' };
+
+  syncVault(store);
+  const state = store.getState();
+  const owned = state.research;
+
+  if (owned.includes(researchId)) return { ok: false, reason: 'Already researched.' };
+  if (def.requires && !owned.includes(def.requires)) {
+    return {
+      ok: false,
+      reason: `${getResearch(def.requires)?.name ?? 'Something else'} comes first.`,
+    };
+  }
+  if (state.currency.cinder < def.cost) {
+    return { ok: false, reason: 'Not enough Cinder.' };
+  }
+
+  store.update((current) => ({
+    ...current,
+    currency: {
+      ...current.currency,
+      cinder: current.currency.cinder - def.cost,
+    },
+    research: [...current.research, researchId],
+  }));
+
+  creditAchievements(store);
   return { ok: true };
 }
 
@@ -183,7 +577,7 @@ export function buyCosmetic(store: Store, cosmeticId: string): PurchaseResult {
 
   store.update((current) => ({
     ...current,
-    currency: { lumen: current.currency.lumen - def.cost },
+    currency: { ...current.currency, lumen: current.currency.lumen - def.cost },
     city: {
       ...current.city,
       cosmetics: {
@@ -216,6 +610,8 @@ export function equipCosmetic(store: Store, cosmeticId: string): void {
       },
     };
   });
+
+  creditAchievements(store);
 }
 
 /** Unequips a cosmetic, leaving its slot empty. */
@@ -229,6 +625,38 @@ export function unequipCosmetic(store: Store, cosmeticId: string): void {
         equipped: state.city.cosmetics.equipped.filter((id) => id !== cosmeticId),
       },
     },
+  }));
+}
+
+/**
+ * Replaces one routine's checklist with an edited list.
+ *
+ * The items are sanitised here rather than trusted from the editor, so a bad
+ * edit can't put a save into a state the review flow or scoring can't handle.
+ * Rejects an empty result: a routine with no items can't be reviewed.
+ */
+export function saveChecklist(
+  store: Store,
+  reviewId: ReviewId,
+  items: readonly Partial<ChecklistItem>[],
+): ActionResult {
+  const clean = sanitizeItems(items);
+  if (clean.length === 0)
+    return { ok: false, reason: 'A review needs at least one item.' };
+
+  store.update((state) => ({
+    ...state,
+    checklists: { ...state.checklists, [reviewId]: clean },
+  }));
+  creditAchievements(store);
+  return { ok: true };
+}
+
+/** Puts one routine back to the checklist Aerie ships with. */
+export function resetChecklist(store: Store, reviewId: ReviewId): void {
+  store.update((state) => ({
+    ...state,
+    checklists: { ...state.checklists, [reviewId]: defaultItems(reviewId) },
   }));
 }
 

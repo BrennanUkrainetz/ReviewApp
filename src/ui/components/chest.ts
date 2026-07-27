@@ -5,10 +5,14 @@
  * It runs twice a day, so anticipation is the whole design goal; anything
  * longer would become the chore it's meant to offset.
  */
+import { getAchievement } from '@/config/achievements';
+import { getContract } from '@/config/contracts';
 import { getCosmetic } from '@/config/shop';
 import type { ReviewOutcome } from '@/state/actions';
 import type { Store } from '@/state/store';
-import { append, el, formatNumber, svg } from '../dom';
+import { formatBig } from '@/domain/bignum';
+import { append, el, svg } from '../dom';
+import { iconCinder } from '../icons';
 import { motionDuration, wait } from '../motion';
 
 const SHAKE_MS = 900;
@@ -28,15 +32,35 @@ function chestArt(): SVGSVGElement {
     svg(
       'linearGradient',
       { id: 'chest-plume', x1: '0', y1: '1', x2: '0', y2: '0' },
-      svg('stop', { offset: '0%', 'stop-color': 'var(--chest-beam)', 'stop-opacity': '0.95' }),
-      svg('stop', { offset: '55%', 'stop-color': 'var(--chest-beam)', 'stop-opacity': '0.35' }),
-      svg('stop', { offset: '100%', 'stop-color': 'var(--chest-beam)', 'stop-opacity': '0' }),
+      svg('stop', {
+        offset: '0%',
+        'stop-color': 'var(--chest-beam)',
+        'stop-opacity': '0.95',
+      }),
+      svg('stop', {
+        offset: '55%',
+        'stop-color': 'var(--chest-beam)',
+        'stop-opacity': '0.35',
+      }),
+      svg('stop', {
+        offset: '100%',
+        'stop-color': 'var(--chest-beam)',
+        'stop-opacity': '0',
+      }),
     ),
     svg(
       'radialGradient',
       { id: 'chest-mouth' },
-      svg('stop', { offset: '0%', 'stop-color': 'var(--chest-beam)', 'stop-opacity': '0.95' }),
-      svg('stop', { offset: '100%', 'stop-color': 'var(--chest-beam)', 'stop-opacity': '0' }),
+      svg('stop', {
+        offset: '0%',
+        'stop-color': 'var(--chest-beam)',
+        'stop-opacity': '0.95',
+      }),
+      svg('stop', {
+        offset: '100%',
+        'stop-color': 'var(--chest-beam)',
+        'stop-opacity': '0',
+      }),
     ),
     svg(
       'filter',
@@ -60,7 +84,14 @@ function chestArt(): SVGSVGElement {
       stroke: 'var(--chest-trim)',
       'stroke-width': 4,
     }),
-    svg('rect', { x: 64, y: 26, width: 16, height: 36, rx: 3, fill: 'var(--chest-trim)' }),
+    svg('rect', {
+      x: 64,
+      y: 26,
+      width: 16,
+      height: 36,
+      rx: 3,
+      fill: 'var(--chest-trim)',
+    }),
   );
 
   const light = svg(
@@ -107,19 +138,46 @@ function chestArt(): SVGSVGElement {
       'stroke-width': 3,
     }),
     svg('rect', { x: 18, y: 70, width: 108, height: 7, fill: 'var(--chest-trim)' }),
-    svg('rect', { x: 62, y: 74, width: 20, height: 20, rx: 4, fill: 'var(--chest-trim)' }),
+    svg('rect', {
+      x: 62,
+      y: 74,
+      width: 20,
+      height: 20,
+      rx: 4,
+      fill: 'var(--chest-trim)',
+    }),
     svg('circle', { cx: 72, cy: 84, r: 4, fill: 'var(--chest-body)' }),
     lid,
     sparks,
   );
 }
 
-function lumenRow(label: string, amount: number, muted = false): HTMLElement {
+/**
+ * One payout line. A `crit` row is a bonus that landed on top of the ordinary
+ * review payout — a milestone or a contract — and gets the emphasis to match:
+ * the number pops and wears a "Critical" tag, so a rare payout reads as one.
+ */
+function lumenRow(
+  label: string,
+  amount: number,
+  opts: { muted?: boolean; crit?: boolean } = {},
+): HTMLElement {
   return el(
     'li',
-    { class: ['chest-loot__row', muted && 'chest-loot__row--muted'] },
-    el('span', {}, label),
-    el('span', { class: 'num chest-loot__amount' }, `+${formatNumber(amount)}`),
+    {
+      class: [
+        'chest-loot__row',
+        opts.muted && 'chest-loot__row--muted',
+        opts.crit && 'chest-loot__row--crit',
+      ],
+    },
+    el(
+      'span',
+      { class: 'chest-loot__label' },
+      label,
+      opts.crit ? el('span', { class: 'chest-loot__crit-tag' }, 'Critical') : null,
+    ),
+    el('span', { class: 'num chest-loot__amount' }, `+${formatBig(amount)}`),
   );
 }
 
@@ -146,7 +204,6 @@ export function createChestSequence({
   const { reward } = outcome;
   const art = chestArt();
   let opened = false;
-
 
   const hint = el('p', { class: 'chest__hint' }, 'Tap the chest to open it');
 
@@ -190,24 +247,77 @@ export function createChestSequence({
 
   function revealLoot(): void {
     const cosmetic = reward.cosmeticId ? getCosmetic(reward.cosmeticId) : null;
+    const earned = outcome.earnedAchievements
+      .map((id) => getAchievement(id))
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+    const contract = reward.contractId ? getContract(reward.contractId) : null;
 
     const rows = el('ul', { class: 'chest-loot__rows' });
     rows.appendChild(lumenRow('Review payout', reward.reviewLumen));
-    if (reward.passiveLumen > 0) rows.appendChild(lumenRow('City income', reward.passiveLumen));
     if (reward.bonusLumen > 0) {
       rows.appendChild(
         lumenRow(
           reward.milestone?.kind === 'big' ? 'Milestone bonus' : 'Streak bonus',
           reward.bonusLumen,
+          { crit: true },
         ),
+      );
+    }
+    if (contract && reward.contractLumen > 0) {
+      rows.appendChild(
+        lumenRow(`Contract · ${contract.name}`, reward.contractLumen, { crit: true }),
       );
     }
 
     loot.removeAttribute('hidden');
     append(loot, [
-      el('p', { class: 'chest-loot__total num' }, `+${formatNumber(reward.totalLumen)}`),
+      el('p', { class: 'chest-loot__total num' }, `+${formatBig(reward.totalLumen)}`),
       el('p', { class: 'chest-loot__total-label' }, 'Lumen'),
+      // Heat multiplies the payout rows, so it is stated above them rather than
+      // listed as if it were another additive line.
+      reward.heat > 1
+        ? el(
+            'p',
+            { class: 'chest-loot__heat' },
+            `Heat ×${reward.heat.toFixed(1)} applied`,
+          )
+        : null,
       rows,
+      // The city's own output is not in this chest — it is accruing in the
+      // vault. Said plainly, because a big city with a small chest otherwise
+      // looks like something has gone wrong.
+      reward.passiveLumen > 0
+        ? el(
+            'p',
+            { class: 'chest-loot__aside' },
+            `The city is producing ${formatBig(reward.passiveLumen)} a day, into the vault.`,
+          )
+        : null,
+      // Cinder is a separate currency, so it gets its own line rather than a
+      // Lumen row — a full clear is what earns it, which is worth calling out.
+      outcome.cinderEarned > 0
+        ? el(
+            'p',
+            { class: 'chest-loot__cinder' },
+            el('span', { class: 'chest-loot__cinder-icon', html: iconCinder() }),
+            `+${outcome.cinderEarned} Cinder for the full clear`,
+          )
+        : null,
+      earned.length > 0
+        ? el(
+            'div',
+            { class: 'chest-loot__cosmetic' },
+            el(
+              'p',
+              { class: 'section-label' },
+              earned.length === 1 ? 'Achievement' : 'Achievements',
+            ),
+            ...earned.map((entry) =>
+              el('p', { class: 'chest-loot__cosmetic-name' }, entry.name),
+            ),
+          )
+        : null,
       cosmetic
         ? el(
             'div',

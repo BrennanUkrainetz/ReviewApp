@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { COSMETICS } from '@/config/shop';
 import {
-  BIG_MILESTONE_BONUS_LUMEN,
-  SMALL_MILESTONE_BONUS_LUMEN,
+  BIG_MILESTONE_BONUS_FLOOR,
+  SMALL_MILESTONE_BONUS_FLOOR,
+  SMALL_MILESTONE_BONUS_SHARE,
 } from '@/config/tuning';
 import { createInitialState } from '@/state/defaults';
 import {
   buildReward,
   checkMilestones,
   lockedCosmetics,
-  passiveIncome,
+  milestoneBonus,
   rollCosmetic,
   type Rng,
 } from './rewards';
@@ -25,7 +26,7 @@ function seq(...values: number[]): Rng {
 describe('checkMilestones', () => {
   it('fires the small milestone every interval and moves the marker', () => {
     const { hit, milestones } = checkMilestones(baseMilestones, 5);
-    expect(hit).toEqual({ kind: 'small', at: 5, bonusLumen: SMALL_MILESTONE_BONUS_LUMEN });
+    expect(hit).toEqual({ kind: 'small', at: 5 });
     expect(milestones.nextSmallAt).toBe(10);
     expect(milestones.nextBigAt).toBe(20);
   });
@@ -36,7 +37,7 @@ describe('checkMilestones', () => {
 
   it('fires the big milestone at 20 and keeps repeating at 40', () => {
     const first = checkMilestones({ ...baseMilestones, nextSmallAt: 20 }, 20);
-    expect(first.hit).toEqual({ kind: 'big', at: 20, bonusLumen: BIG_MILESTONE_BONUS_LUMEN });
+    expect(first.hit).toEqual({ kind: 'big', at: 20 });
     expect(first.milestones.totalBigMilestonesHit).toBe(1);
     expect(first.milestones.nextBigAt).toBe(40);
     // The small marker still moves past 20 so it doesn't fire late.
@@ -54,20 +55,16 @@ describe('checkMilestones', () => {
   });
 });
 
-describe('passiveIncome', () => {
-  it('sums income across buildings and levels', () => {
-    expect(passiveIncome([])).toBe(0);
-    expect(passiveIncome([{ id: 'greenhouse', level: 2 }])).toBe(12);
-    expect(
-      passiveIncome([
-        { id: 'greenhouse', level: 1 },
-        { id: 'windmill', level: 1 },
-      ]),
-    ).toBe(15);
+describe('milestoneBonus', () => {
+  it('pays a share of the day, so late milestones stay meaningful', () => {
+    expect(milestoneBonus('small', 1_000_000)).toBe(
+      1_000_000 * SMALL_MILESTONE_BONUS_SHARE,
+    );
   });
 
-  it('ignores buildings that are no longer in the catalogue', () => {
-    expect(passiveIncome([{ id: 'ghost-tower', level: 4 }])).toBe(0);
+  it('falls back to the flat floor while the day is still small', () => {
+    expect(milestoneBonus('small', 10)).toBe(SMALL_MILESTONE_BONUS_FLOOR);
+    expect(milestoneBonus('big', 10)).toBe(BIG_MILESTONE_BONUS_FLOOR);
   });
 });
 
@@ -91,16 +88,37 @@ describe('rollCosmetic', () => {
 });
 
 describe('buildReward', () => {
-  it('adds up review, passive, and milestone Lumen', () => {
+  it('pays the review and the milestone, but leaves the city output to the vault', () => {
     const reward = buildReward({
       reviewLumen: 120,
       passiveLumen: 18,
-      milestone: { kind: 'small', at: 5, bonusLumen: SMALL_MILESTONE_BONUS_LUMEN },
+      milestone: { kind: 'small', at: 5 },
       unlockedCosmetics: COSMETICS.map((c) => c.id),
       rng: seq(0.99),
     });
-    expect(reward.totalLumen).toBe(120 + 18 + SMALL_MILESTONE_BONUS_LUMEN);
+    expect(reward.totalLumen).toBe(120 + SMALL_MILESTONE_BONUS_FLOOR);
+    expect(reward.passiveLumen).toBe(18);
     expect(reward.chest).toBe('small-milestone');
+  });
+
+  it('strikes the milestone share against the city output all the same', () => {
+    // A big city opens a big chest even though its output is not in the chest.
+    const rich = buildReward({
+      reviewLumen: 100,
+      passiveLumen: 1_000_000,
+      milestone: { kind: 'small', at: 5 },
+      unlockedCosmetics: COSMETICS.map((c) => c.id),
+      rng: seq(0.99),
+    });
+    const poor = buildReward({
+      reviewLumen: 100,
+      passiveLumen: 0,
+      milestone: { kind: 'small', at: 5 },
+      unlockedCosmetics: COSMETICS.map((c) => c.id),
+      rng: seq(0.99),
+    });
+    expect(rich.bonusLumen).toBeGreaterThan(poor.bonusLumen);
+    expect(rich.totalLumen - rich.bonusLumen).toBe(poor.totalLumen - poor.bonusLumen);
   });
 
   it('uses the standard chest with no milestone, and can drop nothing', () => {
@@ -120,7 +138,7 @@ describe('buildReward', () => {
     const reward = buildReward({
       reviewLumen: 100,
       passiveLumen: 0,
-      milestone: { kind: 'big', at: 20, bonusLumen: BIG_MILESTONE_BONUS_LUMEN },
+      milestone: { kind: 'big', at: 20 },
       unlockedCosmetics: [],
       rng: seq(0.99, 0),
     });

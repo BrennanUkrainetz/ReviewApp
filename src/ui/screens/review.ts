@@ -4,9 +4,10 @@
  * The slowness is the point — a wall of checkboxes is easy to skim past and
  * hard to start. One item on screen makes starting cheap and finishing likely.
  */
-import { getChecklist, maxPoints, type ChecklistItem } from '@/config/checklists';
+import { maxPoints } from '@/config/checklists';
 import { completeReview, type ReviewOutcome } from '@/state/actions';
-import type { ReviewId } from '@/state/types';
+import { checklistFor } from '@/state/checklists';
+import type { ChecklistItem, ReviewId } from '@/state/types';
 import { tierLabel } from '@/domain/scoring';
 import { confirmDialog } from '../components/confirm';
 import type { AppContext, Screen } from '../context';
@@ -17,7 +18,9 @@ import { motionDuration, wait } from '../motion';
 const CHECK_ANIMATION_MS = 380;
 
 export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen {
-  const checklist = getChecklist(reviewId);
+  // Snapshotted on entry: editing the checklist mid-flow would renumber the
+  // items under the person working through them.
+  const checklist = checklistFor(ctx.store.getState(), reviewId);
   const done = new Set<string>();
   let index = 0;
   let advancing = false;
@@ -145,11 +148,7 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
       el('h3', { class: 'review-card__label' }, item.label),
       item.hint ? el('p', { class: 'review-card__hint' }, item.hint) : null,
       el('div', { class: 'review-card__actions' }, doneButton, skipButton),
-      el(
-        'p',
-        { class: 'review-card__keys' },
-        'Enter marks it done · S skips',
-      ),
+      el('p', { class: 'review-card__keys' }, 'Enter marks it done · S skips'),
     );
 
     replaceChildren(body, card);
@@ -178,7 +177,9 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
   function buildSummary(outcome: ReviewOutcome): HTMLElement {
     const { score } = outcome;
     const total = maxPoints(checklist);
-    const skipped = checklist.items.filter((item) => score.skippedItemIds.includes(item.id));
+    const skipped = checklist.items.filter((item) =>
+      score.skippedItemIds.includes(item.id),
+    );
 
     const streakLine = outcome.advancedStreak
       ? `Streak now ${outcome.streakAfter} ${outcome.streakAfter === 1 ? 'day' : 'days'}.`
@@ -197,7 +198,11 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
         el('span', { class: 'num' }, `${score.basePoints}`),
         ` of ${total} points`,
         score.bonusPoints > 0
-          ? el('span', { class: 'review-summary__bonus' }, `+${score.bonusPoints} full-clear bonus`)
+          ? el(
+              'span',
+              { class: 'review-summary__bonus' },
+              `+${score.bonusPoints} full-clear bonus`,
+            )
           : null,
       ),
       el('p', { class: 'review-summary__streak' }, streakLine),

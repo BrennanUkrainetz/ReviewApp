@@ -101,6 +101,10 @@ export function formatNumber(value: number): string {
 }
 
 /** `1 day` / `2 days` — small helper so copy stays grammatical. */
-export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+export function plural(
+  count: number,
+  singular: string,
+  pluralForm = `${singular}s`,
+): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }

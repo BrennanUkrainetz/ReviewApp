@@ -9,6 +9,8 @@ export type Route =
   | { name: 'review'; reviewId: ReviewId }
   | { name: 'shop' }
   | { name: 'history' }
+  | { name: 'ascension' }
+  | { name: 'research' }
   | { name: 'settings' };
 
 export const CITY_ROUTE: Route = { name: 'city' };
@@ -39,6 +41,10 @@ export function parseHash(hash: string): Route {
       return { name: 'shop' };
     case 'history':
       return { name: 'history' };
+    case 'ascension':
+      return { name: 'ascension' };
+    case 'research':
+      return { name: 'research' };
     case 'settings':
       return { name: 'settings' };
     default:

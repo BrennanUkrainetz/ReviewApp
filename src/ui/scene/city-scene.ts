@@ -7,60 +7,26 @@
  * that the browser transitions across the whole picture. Buildings are the one
  * part that gets re-rendered, and only when the owned set actually changes.
  */
+import {
+  islandById,
+  nextLockedPage,
+  PAGE_WIDTH,
+  unlockedPages,
+  type IslandSpec,
+} from '@/config/islands';
 import { getBuilding, getCosmetic } from '@/config/shop';
+import { HEAT_CAP_DAYS } from '@/config/tuning';
+import { today } from '@/domain/dates';
+import { heatDays } from '@/domain/heat';
 import type { AerieState } from '@/state/types';
 import type { Store } from '@/state/store';
 import { el, svg } from '../dom';
 import { hearthHall, renderBuilding } from './buildings';
 import { renderCosmetic, SLOT_DEPTH } from './cosmetics';
-import { paletteForProgress, paletteToCssVars, streakProgress } from './palette';
+import { paletteFor, paletteToCssVars, streakProgress } from './palette';
 
-const VIEW_WIDTH = 1200;
+const VIEW_WIDTH = PAGE_WIDTH;
 const VIEW_HEIGHT = 660;
-
-interface IslandSpec {
-  id: 'main' | 'west' | 'east';
-  cx: number;
-  cy: number;
-  rx: number;
-  /** Ground points for shop buildings, in scene coordinates. */
-  slots: { x: number; y: number }[];
-  /** Seconds per bob cycle — deliberately different so they never sync up. */
-  driftDuration: number;
-}
-
-const ISLANDS: IslandSpec[] = [
-  {
-    id: 'west',
-    cx: 235,
-    cy: 322,
-    rx: 118,
-    slots: [{ x: 235, y: 316 }],
-    driftDuration: 19,
-  },
-  {
-    id: 'main',
-    cx: 600,
-    cy: 430,
-    rx: 192,
-    slots: [
-      { x: 492, y: 424 },
-      { x: 712, y: 436 },
-    ],
-    driftDuration: 23,
-  },
-  {
-    id: 'east',
-    cx: 958,
-    cy: 486,
-    rx: 138,
-    slots: [
-      { x: 908, y: 478 },
-      { x: 1012, y: 490 },
-    ],
-    driftDuration: 27,
-  },
-];
 
 /** Small deterministic PRNG so the starfield is identical on every load. */
 function mulberry32(seed: number): () => number {
@@ -95,7 +61,13 @@ function buildStars(): SVGGElement {
 }
 
 /** One puffy cloud built from overlapping ellipses. */
-function cloud(x: number, y: number, scale: number, fill: string, opacity: number): SVGGElement {
+function cloud(
+  x: number,
+  y: number,
+  scale: number,
+  fill: string,
+  opacity: number,
+): SVGGElement {
   const puffs: [number, number, number, number][] = [
     [0, 0, 62, 26],
     [-46, 8, 40, 20],
@@ -128,7 +100,10 @@ function cloudBand(
   }
   return svg(
     'g',
-    { class: `scene__cloud-band ${className}`, style: `--drift-duration:${durationSeconds}s` },
+    {
+      class: `scene__cloud-band ${className}`,
+      style: `--drift-duration:${durationSeconds}s`,
+    },
     band,
   );
 }
@@ -189,7 +164,10 @@ function island(spec: IslandSpec): SVGGElement {
 }
 
 /** A rope bridge slung between two islands. */
-function bridge(from: { x: number; y: number }, to: { x: number; y: number }): SVGGElement {
+function bridge(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): SVGGElement {
   const midX = (from.x + to.x) / 2;
   const sag = Math.abs(to.x - from.x) * 0.18;
   const midY = Math.max(from.y, to.y) + sag;
@@ -235,15 +213,35 @@ function sceneDefs(): SVGDefsElement {
   const halo = svg(
     'radialGradient',
     { id: 'aerie-sun-halo' },
-    svg('stop', { offset: '0%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0.55' }),
-    svg('stop', { offset: '45%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0.22' }),
-    svg('stop', { offset: '100%', 'stop-color': 'var(--scene-sun-glow)', 'stop-opacity': '0' }),
+    svg('stop', {
+      offset: '0%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0.55',
+    }),
+    svg('stop', {
+      offset: '45%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0.22',
+    }),
+    svg('stop', {
+      offset: '100%',
+      'stop-color': 'var(--scene-sun-glow)',
+      'stop-opacity': '0',
+    }),
   );
   const core = svg(
     'radialGradient',
     { id: 'aerie-sun-core' },
-    svg('stop', { offset: '60%', 'stop-color': 'var(--scene-sun-core)', 'stop-opacity': '1' }),
-    svg('stop', { offset: '100%', 'stop-color': 'var(--scene-sun-core)', 'stop-opacity': '0' }),
+    svg('stop', {
+      offset: '60%',
+      'stop-color': 'var(--scene-sun-core)',
+      'stop-opacity': '1',
+    }),
+    svg('stop', {
+      offset: '100%',
+      'stop-color': 'var(--scene-sun-core)',
+      'stop-opacity': '0',
+    }),
   );
   return svg('defs', {}, halo, core);
 }
@@ -298,11 +296,89 @@ function describeScene(state: AerieState, progress: number): string {
   return `The floating city of Aerie, ${light} at a ${state.streak.current}-day streak. ${built}`;
 }
 
+/** A pager arrow's chevron, as a standalone inline SVG. */
+function chevron(dir: 'left' | 'right'): SVGElement {
+  return svg(
+    'svg',
+    { viewBox: '0 0 24 24', class: 'scene-pager__icon', 'aria-hidden': 'true' },
+    svg('path', {
+      d: dir === 'left' ? 'M15 5 L8 12 L15 19' : 'M9 5 L16 12 L9 19',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': 2.5,
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  );
+}
+
+/**
+ * The heat layer: a warm glow low on the scene and a field of embers rising
+ * off the city. Its whole opacity is driven by `--heat`, so it is invisible
+ * cold and grows with the full-clear combo. This is the one place in the scene
+ * that answers to heat rather than the streak — the streak lights the sky, the
+ * combo sets it alight.
+ */
+function buildHeatLayer(): HTMLElement {
+  const layer = el('div', { class: 'scene__heat', attrs: { 'aria-hidden': 'true' } });
+  layer.appendChild(el('div', { class: 'scene__heat-glow' }));
+  const EMBERS = 18;
+  for (let i = 0; i < EMBERS; i += 1) {
+    // Deterministic spread — no `Math.random`, so the field is identical every
+    // load and never jitters between renders.
+    const left = (i * 53 + 7) % 100;
+    const size = 2 + (i % 3);
+    const dur = 4 + (i % 5) * 0.9;
+    const delay = (i % 7) * 0.7;
+    const drift = ((i % 5) - 2) * 14;
+    const rise = 180 + (i % 4) * 40;
+    layer.appendChild(
+      el('span', {
+        class: 'scene__ember',
+        style: {
+          left: `${left}%`,
+          width: `${size}px`,
+          height: `${size}px`,
+          '--ember-dur': `${dur}s`,
+          '--ember-delay': `${delay}s`,
+          '--ember-drift': `${drift}px`,
+          '--ember-rise': `${rise}px`,
+        },
+      }),
+    );
+  }
+  return layer;
+}
+
+/**
+ * Scene heat, 0–1. Zero cold; from the first full-clear day it jumps to a
+ * clearly-visible floor and climbs to full at the cap, so the combo reads at a
+ * glance rather than easing in imperceptibly.
+ */
+function heatIntensity(state: AerieState): number {
+  const days = heatDays(state.history, today());
+  if (days <= 0) return 0;
+  return 0.35 + 0.65 * (Math.min(days, HEAT_CAP_DAYS) / HEAT_CAP_DAYS);
+}
+
 export function createCityScene(store: Store): CityScene {
   const buildingLayer = svg('g', { class: 'scene__buildings' });
+  const islandsLayer = svg('g', { class: 'scene__islands' });
   const backCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--back' });
   const frontCosmetics = svg('g', { class: 'scene__cosmetics scene__cosmetics--front' });
   const sunGroup = sun();
+
+  // Everything that pans between pages lives in one group. The sky behind it
+  // (stars, sun, the far and mid cloud bands) and the near cloud band in front
+  // stay put, so paging reads as the city sliding past a fixed sky.
+  const world = svg(
+    'g',
+    { class: 'scene__world' },
+    backCosmetics,
+    islandsLayer,
+    buildingLayer,
+    frontCosmetics,
+  );
 
   const canvas = svg(
     'svg',
@@ -337,12 +413,7 @@ export function createCityScene(store: Store): CityScene {
       0.5,
       140,
     ),
-    backCosmetics,
-    ...ISLANDS.map(island),
-    bridge({ x: 325, y: 330 }, { x: 445, y: 425 }),
-    bridge({ x: 760, y: 440 }, { x: 852, y: 486 }),
-    buildingLayer,
-    frontCosmetics,
+    world,
     cloudBand(
       'scene__cloud-band--near',
       [
@@ -358,7 +429,105 @@ export function createCityScene(store: Store): CityScene {
   const title = svg('title', {});
   canvas.insertBefore(title, canvas.firstChild);
 
-  const root = el('div', { class: 'scene' }, canvas as unknown as HTMLElement);
+  // The pager: two arrows and the name of the island you are looking at. Hidden
+  // entirely until there is more than one page, so a first-week city is never
+  // shown controls for sky it cannot reach.
+  const pageLabel = el('span', {
+    class: 'scene-pager__label',
+    attrs: { 'aria-live': 'polite' },
+  });
+  const prevBtn = el(
+    'button',
+    {
+      class: 'scene-pager__arrow scene-pager__arrow--prev',
+      attrs: { type: 'button', 'aria-label': 'Previous island' },
+      on: { click: () => go(-1) },
+    },
+    chevron('left'),
+  );
+  const nextBtn = el(
+    'button',
+    {
+      class: 'scene-pager__arrow scene-pager__arrow--next',
+      attrs: { type: 'button', 'aria-label': 'Next island' },
+      on: { click: () => go(1) },
+    },
+    chevron('right'),
+  );
+  const pager = el(
+    'nav',
+    { class: 'scene-pager', attrs: { 'aria-label': 'Islands' } },
+    prevBtn,
+    pageLabel,
+    nextBtn,
+  );
+
+  const heatLayer = buildHeatLayer();
+
+  const root = el(
+    'div',
+    { class: 'scene' },
+    canvas as unknown as HTMLElement,
+    heatLayer,
+    pager,
+  );
+
+  /** Which page is centred in the viewport. View-only — never persisted. */
+  let page = 0;
+
+  function applyWorld(): void {
+    world.style.transform = `translateX(${-page * PAGE_WIDTH}px)`;
+  }
+
+  function updatePager(): void {
+    const state = store.getState();
+    const pages = unlockedPages(state.ascension.count);
+    const count = pages.length;
+    // A page can vanish from under you only in tests/resets, never in normal
+    // play — ascension count doesn't fall — but clamp anyway.
+    if (page > count - 1) {
+      page = Math.max(0, count - 1);
+      applyWorld();
+    }
+
+    pager.hidden = count <= 1;
+    (prevBtn as HTMLButtonElement).disabled = page <= 0;
+    (nextBtn as HTMLButtonElement).disabled = page >= count - 1;
+    pageLabel.textContent = pages[page]?.name ?? '';
+
+    const locked = nextLockedPage(state.ascension.count);
+    nextBtn.title =
+      page >= count - 1 && locked ? `Ascend to reach ${locked.name}` : '';
+  }
+
+  function go(delta: number): void {
+    const count = unlockedPages(store.getState().ascension.count).length;
+    const next = Math.min(Math.max(page + delta, 0), count - 1);
+    if (next === page) return;
+    page = next;
+    applyWorld();
+    updatePager();
+  }
+
+  let renderedIslands: string | null = null;
+
+  function renderIslands(state: AerieState): void {
+    const pages = unlockedPages(state.ascension.count);
+    const signature = pages.map((p) => p.index).join(',');
+    if (signature === renderedIslands) return;
+    renderedIslands = signature;
+
+    while (islandsLayer.firstChild) islandsLayer.removeChild(islandsLayer.firstChild);
+
+    // Islands first, then every bridge on top of them, matching the original
+    // draw order where a bridge rests over the island edges it joins.
+    const bridges: SVGGElement[] = [];
+    for (const p of pages) {
+      for (const spec of p.islands) islandsLayer.appendChild(island(spec));
+      for (const b of p.bridges) bridges.push(bridge(b.from, b.to));
+    }
+    for (const b of bridges) islandsLayer.appendChild(b);
+  }
 
   // `null` rather than '' so the first pass runs even with nothing built yet —
   // the hearth hall still has to be placed.
@@ -374,21 +543,31 @@ export function createCityScene(store: Store): CityScene {
 
     while (buildingLayer.firstChild) buildingLayer.removeChild(buildingLayer.firstChild);
 
-    // The hearth is always there — the city is never empty.
+    // The hearth is always there — the city is never empty. It stands on the
+    // home page, so it pans away like everything else.
     buildingLayer.appendChild(placeAt(600, 418, hearthHall()));
 
-    // Sort by depth so nearer islands overlap farther ones correctly.
+    /** Where a building stands, in absolute scene coords, or `null` if unknown. */
+    const slotFor = (id: string): { x: number; y: number; cx: number } | null => {
+      const def = getBuilding(id);
+      if (!def) return null;
+      const spec = islandById(def.island);
+      if (!spec) return null;
+      const slot = spec.slots[def.slot] ?? spec.slots[0];
+      return slot ? { x: slot.x, y: slot.y, cx: spec.cx } : null;
+    };
+
+    // Sort back to front by island (its centre x, so pages stay in order) then
+    // by depth within it, so a nearer building overlaps the one behind it.
     const owned = [...state.city.buildings].sort((a, b) => {
-      const islandOf = (id: string): number =>
-        ISLANDS.findIndex((spec) => spec.id === (getBuilding(id)?.island ?? 'main'));
-      return islandOf(a.id) - islandOf(b.id);
+      const left = slotFor(a.id);
+      const right = slotFor(b.id);
+      if (!left || !right) return 0;
+      return left.cx - right.cx || left.y - right.y;
     });
 
     for (const entry of owned) {
-      const def = getBuilding(entry.id);
-      if (!def) continue;
-      const spec = ISLANDS.find((candidate) => candidate.id === def.island);
-      const slot = spec?.slots[def.slot] ?? spec?.slots[0];
+      const slot = slotFor(entry.id);
       if (!slot) continue;
 
       const node = renderBuilding(entry.id, entry.level);
@@ -413,19 +592,22 @@ export function createCityScene(store: Store): CityScene {
       const def = getCosmetic(id);
       const node = renderCosmetic(id);
       if (!def || !node) continue;
-      (SLOT_DEPTH[def.slot] === 'back' ? backCosmetics : frontCosmetics).appendChild(node);
+      (SLOT_DEPTH[def.slot] === 'back' ? backCosmetics : frontCosmetics).appendChild(
+        node,
+      );
     }
   }
 
   function render(): void {
     const state = store.getState();
     const progress = streakProgress(state.streak.current);
-    const palette = paletteForProgress(progress);
+    const palette = paletteFor(state.streak.current, state.ascension.count);
 
     for (const [name, value] of Object.entries(paletteToCssVars(palette))) {
       root.style.setProperty(name, value);
       // The page background shares the sky variables.
-      if (name.startsWith('--sky-')) document.documentElement.style.setProperty(name, value);
+      if (name.startsWith('--sky-'))
+        document.documentElement.style.setProperty(name, value);
     }
 
     const sunX = 268;
@@ -433,12 +615,17 @@ export function createCityScene(store: Store): CityScene {
     sunGroup.setAttribute('transform', `translate(${sunX} ${sunY.toFixed(1)})`);
     sunGroup.setAttribute('opacity', palette.sunOpacity.toFixed(3));
 
+    root.style.setProperty('--heat', heatIntensity(state).toFixed(3));
+
+    renderIslands(state);
     renderBuildings(state);
     renderCosmetics(state);
+    updatePager();
     title.textContent = describeScene(state, progress);
     canvas.setAttribute('aria-label', title.textContent);
   }
 
+  applyWorld();
   render();
   const unsubscribe = store.subscribe(render);
 

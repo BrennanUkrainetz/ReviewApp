@@ -27,7 +27,11 @@ export function confirmDialog({
 
     const cancelButton = el(
       'button',
-      { class: 'btn btn--ghost', attrs: { type: 'button' }, on: { click: () => dialog.close() } },
+      {
+        class: 'btn btn--ghost',
+        attrs: { type: 'button' },
+        on: { click: () => dialog.close() },
+      },
       cancelLabel,
     );
 

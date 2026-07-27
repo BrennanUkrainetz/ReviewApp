@@ -5,20 +5,30 @@
  * reported the same way as any other fact, because this screen exists for
  * Brennan to see his own patterns, not to be managed by.
  */
-import { CHECKLISTS, REVIEW_IDS } from '@/config/checklists';
+import { CHECKLIST_META, REVIEW_IDS } from '@/config/checklists';
 import { HISTORY_PAGE_SIZE } from '@/config/tuning';
-import { addDays, daysBetween, formatShortDay, today, type DateKey } from '@/domain/dates';
+import {
+  addDays,
+  daysBetween,
+  formatShortDay,
+  today,
+  type DateKey,
+} from '@/domain/dates';
 import { tierLabel } from '@/domain/scoring';
+import { ACHIEVEMENTS, ACHIEVEMENT_GROUPS } from '@/config/achievements';
+import { achievementMultiplier } from '@/domain/achievements';
 import { fullClearStreak, totalReviewsCompleted } from '@/domain/streak';
 import type { AerieState, DayRecord } from '@/state/types';
 import type { AppContext, Screen } from '../context';
-import { el, formatNumber, plural, replaceChildren } from '../dom';
+import { formatBig } from '@/domain/bignum';
+import { el, plural, replaceChildren } from '../dom';
 import { iconBack } from '../icons';
 
 export function createHistoryScreen(ctx: AppContext): Screen {
   let showAll = false;
 
   const stats = el('div', { class: 'history__stats' });
+  const badges = el('div', { class: 'badges' });
   const list = el('ol', { class: 'history__list' });
   const footer = el('div', { class: 'history__footer' });
 
@@ -42,6 +52,8 @@ export function createHistoryScreen(ctx: AppContext): Screen {
       el('span', {}),
     ),
     stats,
+    el('p', { class: 'section-label' }, 'Achievements'),
+    badges,
     el('p', { class: 'section-label' }, 'Day by day'),
     list,
     footer,
@@ -85,13 +97,12 @@ export function createHistoryScreen(ctx: AppContext): Screen {
         el(
           'span',
           { class: `badge badge--${record.tier}` },
-          `${CHECKLISTS[id].name.replace(' Review', '')} · ${tierLabel(record.tier)}`,
+          `${CHECKLIST_META[id].name.replace(' Review', '')} · ${tierLabel(record.tier)}`,
         ),
       );
     }
 
-    const earned =
-      (day?.morning?.lumenEarned ?? 0) + (day?.daily?.lumenEarned ?? 0);
+    const earned = (day?.morning?.lumenEarned ?? 0) + (day?.daily?.lumenEarned ?? 0);
 
     return el(
       'li',
@@ -109,7 +120,11 @@ export function createHistoryScreen(ctx: AppContext): Screen {
           ? badges
           : [el('span', { class: 'history-row__none' }, 'No review logged')]),
       ),
-      el('span', { class: 'history-row__lumen num' }, earned > 0 ? `+${formatNumber(earned)}` : ''),
+      el(
+        'span',
+        { class: 'history-row__lumen num' },
+        earned > 0 ? `+${formatBig(earned)}` : '',
+      ),
     );
   }
 
@@ -133,10 +148,16 @@ export function createHistoryScreen(ctx: AppContext): Screen {
       statTile('Days off taken', String(state.streak.daysOffUsed)),
     );
 
+    renderBadges(state);
+
     if (days.length === 0) {
       replaceChildren(
         list,
-        el('li', { class: 'empty' }, 'Nothing logged yet. Your first review starts the record.'),
+        el(
+          'li',
+          { class: 'empty' },
+          'Nothing logged yet. Your first review starts the record.',
+        ),
       );
       replaceChildren(footer);
       return;
@@ -162,6 +183,50 @@ export function createHistoryScreen(ctx: AppContext): Screen {
             `Show all ${plural(days.length, 'day')}`,
           )
         : null,
+    );
+  }
+
+  /**
+   * Every achievement, earned or not, grouped. Locked ones show their name but
+   * not how to get them — the list is a map of the game, not a checklist to
+   * grind, and a spoiled surprise is worth less than a discovered one.
+   */
+  function renderBadges(state: AerieState): void {
+    const earned = new Set(state.achievements);
+    const multiplier = achievementMultiplier(state.achievements);
+
+    replaceChildren(
+      badges,
+      el(
+        'p',
+        { class: 'badges__summary' },
+        `${earned.size} of ${ACHIEVEMENTS.length} earned · `,
+        el('span', { class: 'num' }, `×${multiplier.toFixed(2)}`),
+        ' on every Lumen you earn.',
+      ),
+      ...ACHIEVEMENT_GROUPS.map((group) =>
+        el(
+          'div',
+          { class: 'badges__group' },
+          el('h3', { class: 'badges__group-name' }, group.name),
+          el(
+            'ul',
+            { class: 'badges__grid' },
+            ...ACHIEVEMENTS.filter((entry) => entry.group === group.id).map((entry) => {
+              const has = earned.has(entry.id);
+              return el(
+                'li',
+                {
+                  class: ['badge-card', has && 'badge-card--earned'],
+                  attrs: { title: has ? entry.detail : 'Not earned yet' },
+                },
+                el('span', { class: 'badge-card__name' }, entry.name),
+                has ? el('span', { class: 'badge-card__detail' }, entry.detail) : null,
+              );
+            }),
+          ),
+        ),
+      ),
     );
   }
 

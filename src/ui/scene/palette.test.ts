@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { MULTIPLIER_CAP_STREAK } from '@/config/tuning';
-import { mixColor, paletteForProgress, paletteToCssVars, streakProgress } from './palette';
+import {
+  mixColor,
+  paletteForProgress,
+  paletteToCssVars,
+  streakProgress,
+} from './palette';
 
 /** Rough perceived brightness of a hex colour, 0–255. */
 function luminance(hex: string): number {
   const value = hex.replace('#', '');
-  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+  const [r, g, b] = [0, 2, 4].map((offset) =>
+    parseInt(value.slice(offset, offset + 2), 16),
+  );
   return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
@@ -64,7 +71,9 @@ describe('paletteForProgress', () => {
   it('moves monotonically — no dip halfway through the ramp', () => {
     const samples = Array.from({ length: 21 }, (_, i) => paletteForProgress(i / 20));
     for (let i = 1; i < samples.length; i += 1) {
-      expect(samples[i]!.windowOpacity).toBeGreaterThanOrEqual(samples[i - 1]!.windowOpacity);
+      expect(samples[i]!.windowOpacity).toBeGreaterThanOrEqual(
+        samples[i - 1]!.windowOpacity,
+      );
       expect(samples[i]!.sunRise).toBeGreaterThanOrEqual(samples[i - 1]!.sunRise);
       expect(samples[i]!.starOpacity).toBeLessThanOrEqual(samples[i - 1]!.starOpacity);
     }
@@ -80,7 +89,9 @@ describe('paletteToCssVars', () => {
   it('emits every variable the stylesheet reads, as strings', () => {
     const vars = paletteToCssVars(paletteForProgress(0.5));
     expect(vars['--sky-top']).toMatch(/^#[0-9a-f]{6}$/);
-    expect(vars['--scene-window-opacity']).toBe(String(paletteForProgress(0.5).windowOpacity));
+    expect(vars['--scene-window-opacity']).toBe(
+      String(paletteForProgress(0.5).windowOpacity),
+    );
     expect(Object.keys(vars)).toContain('--scene-star-opacity');
     expect(Object.values(vars).every((value) => typeof value === 'string')).toBe(true);
   });

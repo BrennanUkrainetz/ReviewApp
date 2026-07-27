@@ -3,23 +3,43 @@
  *
  * Everything else is entered from here and returns here.
  */
-import { CHECKLISTS, REVIEW_IDS } from '@/config/checklists';
+import { CHECKLIST_META, REVIEW_IDS } from '@/config/checklists';
 import { today } from '@/domain/dates';
+import { canAscend } from '@/domain/ascension';
+import { contractFor } from '@/domain/contracts';
+import { describeHeat, heatDays } from '@/domain/heat';
 import { findDay } from '@/domain/streak';
 import { takeDayOff } from '@/state/actions';
 import type { DayRecord, ReviewId } from '@/state/types';
 import { confirmDialog } from '../components/confirm';
 import { createLightingCaption } from '../components/lighting-caption';
+import { createMoteField, moteCaughtMessage } from '../components/motes';
+import { createVaultPanel, vaultCollectedMessage } from '../components/vault';
 import type { AppContext, Screen } from '../context';
 import { el, replaceChildren } from '../dom';
-import { iconCheck, iconDayOff, iconHistory, iconSettings, iconShop } from '../icons';
+import {
+  iconAether,
+  iconCheck,
+  iconDayOff,
+  iconHistory,
+  iconSettings,
+  iconShop,
+  iconWorkshop,
+} from '../icons';
 import { createCityScene } from '../scene/city-scene';
 
 export function createCityScreen(ctx: AppContext): Screen {
   const scene = createCityScene(ctx.store);
   const caption = createLightingCaption(ctx.store);
-  const stage = el('figure', { class: 'city-stage' }, scene.el, caption.el);
+  const motes = createMoteField(ctx.store, (lumen) =>
+    ctx.toast(moteCaughtMessage(lumen)),
+  );
+  const vault = createVaultPanel(ctx.store, (lumen) =>
+    ctx.toast(vaultCollectedMessage(lumen)),
+  );
+  const stage = el('figure', { class: 'city-stage' }, scene.el, motes.el, caption.el);
   const statusLine = el('p', { class: 'city-status' });
+  const dayBar = el('div', { class: 'city-day' });
   const primaryActions = el('div', { class: 'action-rail' });
   const secondaryActions = el('div', { class: 'action-rail__secondary' });
 
@@ -31,13 +51,49 @@ export function createCityScreen(ctx: AppContext): Screen {
       'div',
       { class: 'city-controls' },
       statusLine,
+      vault.el,
+      dayBar,
       primaryActions,
       secondaryActions,
     ),
   );
 
+  /**
+   * The day's contract and the heat riding on it. Both are shown whether or
+   * not they are currently paying — a contract you have already settled and a
+   * combo you are about to lose are both worth knowing about.
+   */
+  function renderDayBar(
+    state: ReturnType<typeof ctx.store.getState>,
+    day: DayRecord | undefined,
+  ): void {
+    const contract = contractFor(today());
+    const settled = day ? contract.satisfiedBy(day) : false;
+    const heat = heatDays(state.history, today());
+
+    replaceChildren(
+      dayBar,
+      el(
+        'div',
+        { class: ['city-day__item', settled && 'city-day__item--done'] },
+        el(
+          'span',
+          { class: 'city-day__label' },
+          settled ? 'Contract settled' : "Today's contract",
+        ),
+        el('span', { class: 'city-day__value' }, `${contract.name} — ${contract.goal}`),
+      ),
+      el(
+        'div',
+        { class: ['city-day__item', heat > 0 && 'city-day__item--hot'] },
+        el('span', { class: 'city-day__label' }, 'Heat'),
+        el('span', { class: 'city-day__value' }, describeHeat(heat)),
+      ),
+    );
+  }
+
   function reviewButton(reviewId: ReviewId, day: DayRecord | undefined): HTMLElement {
-    const checklist = CHECKLISTS[reviewId];
+    const checklist = CHECKLIST_META[reviewId];
     const record = day?.[reviewId];
     const alreadyDone = Boolean(record?.completed);
 
@@ -84,7 +140,8 @@ export function createCityScreen(ctx: AppContext): Screen {
         attrs: {
           type: 'button',
           disabled: isDayOff || completedToday.length > 0,
-          title: completedToday.length > 0 ? 'You already logged a review today.' : undefined,
+          title:
+            completedToday.length > 0 ? 'You already logged a review today.' : undefined,
         },
         on: { click: () => void onDayOff() },
       },
@@ -108,15 +165,28 @@ export function createCityScreen(ctx: AppContext): Screen {
         label,
       );
 
+    // Ascension only appears once it is reachable, so a first-week city is
+    // never shown a door it cannot open. The Workshop appears the same way —
+    // once there is Cinder to spend or research already bought.
+    const showAscension = canAscend(state) || state.ascension.aetherEarned > 0;
+    const showWorkshop = state.currency.cinder > 0 || state.research.length > 0;
+
     replaceChildren(
       secondaryActions,
       dayOffButton,
       navButton('Shop', iconShop(), { name: 'shop' }),
+      showWorkshop ? navButton('Workshop', iconWorkshop(), { name: 'research' }) : null,
+      showAscension ? navButton('Ascension', iconAether(), { name: 'ascension' }) : null,
       navButton('Progress', iconHistory(), { name: 'history' }),
       navButton('Settings', iconSettings(), { name: 'settings' }),
     );
 
-    statusLine.textContent = describeToday(completedToday, isDayOff, state.streak.current);
+    statusLine.textContent = describeToday(
+      completedToday,
+      isDayOff,
+      state.streak.current,
+    );
+    renderDayBar(state, day);
   }
 
   render();
@@ -126,6 +196,8 @@ export function createCityScreen(ctx: AppContext): Screen {
     el: root,
     destroy: () => {
       unsubscribe();
+      vault.destroy();
+      motes.destroy();
       caption.destroy();
       scene.destroy();
     },
@@ -133,17 +205,13 @@ export function createCityScreen(ctx: AppContext): Screen {
 }
 
 /** Plain, factual status copy — no nudging, no guilt. */
-function describeToday(
-  completed: ReviewId[],
-  isDayOff: boolean,
-  streak: number,
-): string {
+function describeToday(completed: ReviewId[], isDayOff: boolean, streak: number): string {
   if (isDayOff) return 'Today is a day off. Your streak is held.';
   if (completed.length === 2) return 'Both reviews logged today. Nothing left to do.';
   if (completed.length === 1) {
     const remaining = REVIEW_IDS.find((id) => !completed.includes(id));
-    return `${CHECKLISTS[completed[0]!].name} logged. ${
-      remaining ? CHECKLISTS[remaining].name : 'Nothing'
+    return `${CHECKLIST_META[completed[0]!].name} logged. ${
+      remaining ? CHECKLIST_META[remaining].name : 'Nothing'
     } is still open.`;
   }
   return streak > 0

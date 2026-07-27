@@ -10,6 +10,7 @@
  * Colours are interpolated in linear-light space; mixing warm and cool sRGB
  * values directly goes grey and muddy through the middle of the ramp.
  */
+import { bandFor, type AltitudeBand } from '@/config/ascension';
 import { MULTIPLIER_CAP_STREAK } from '@/config/tuning';
 
 export interface ScenePalette {
@@ -172,7 +173,9 @@ function blendPalettes(from: ScenePalette, to: ScenePalette, t: number): ScenePa
     const a = from[key];
     const b = to[key];
     out[key] =
-      typeof a === 'number' && typeof b === 'number' ? lerp(a, b, t) : mixColor(String(a), String(b), t);
+      typeof a === 'number' && typeof b === 'number'
+        ? lerp(a, b, t)
+        : mixColor(String(a), String(b), t);
   }
   return out as unknown as ScenePalette;
 }
@@ -180,6 +183,39 @@ function blendPalettes(from: ScenePalette, to: ScenePalette, t: number): ScenePa
 /** How far along the lighting ramp a streak sits, 0–1. */
 export function streakProgress(streak: number): number {
   return clamp01(streak / MULTIPLIER_CAP_STREAK);
+}
+
+/**
+ * Pulls a palette toward an altitude band's colour.
+ *
+ * Applied *after* the streak blend, and only to the atmosphere — sky, cloud,
+ * haze, rim — never to façades or window glow. That split is what keeps the
+ * two axes legible: altitude changes the air the city sits in, the streak
+ * still owns the light coming out of its windows.
+ */
+export function applyBand(palette: ScenePalette, band: AltitudeBand): ScenePalette {
+  if (band.strength <= 0) return palette;
+
+  const pull = (colour: string): string => mixColor(colour, band.tint, band.strength);
+
+  return {
+    ...palette,
+    skyTop: pull(palette.skyTop),
+    skyBottom: pull(palette.skyBottom),
+    skyHorizon: pull(palette.skyHorizon),
+    cloudFar: pull(palette.cloudFar),
+    cloudNear: pull(palette.cloudNear),
+    cloudHighlight: pull(palette.cloudHighlight),
+    haze: pull(palette.haze),
+    rim: pull(palette.rim),
+    // The air thins as the city climbs, so stars hold on further into the day.
+    starOpacity: clamp01(palette.starOpacity + band.starBoost),
+  };
+}
+
+/** The scene's palette for a streak and an altitude, in that order. */
+export function paletteFor(streak: number, ascensions: number): ScenePalette {
+  return applyBand(paletteForProgress(streakProgress(streak)), bandFor(ascensions));
 }
 
 /** The lit palette at progress `t` (0 = pre-dawn, 1 = golden hour). */

@@ -1,20 +1,14 @@
 /**
- * The review content, as plain data. Edit the items here — labels, points,
- * ordering, or which items are `core` — without touching app logic.
+ * The review content Aerie *starts* with, as plain data.
  *
- * `core: true` marks an item as part of the Floor: doing all core items is
- * enough to keep the streak alive on a bad day.
+ * The items themselves are editable from Settings and live in the save file
+ * (`state.checklists`), so this file seeds a fresh save and backs the
+ * "Reset to defaults" button. The wrapper copy — names, expedition flavour,
+ * blurbs — is not editable and is read from here at runtime.
  */
-import type { ReviewId } from '@/state/types';
+import type { ChecklistItem, ReviewId } from '@/state/types';
 
-export interface ChecklistItem {
-  id: string;
-  label: string;
-  /** Optional one-line nudge shown under the label during the flow. */
-  hint?: string;
-  points: number;
-  core: boolean;
-}
+export type { ChecklistItem };
 
 export interface Checklist {
   id: ReviewId;
@@ -27,63 +21,75 @@ export interface Checklist {
   items: ChecklistItem[];
 }
 
-export const CHECKLISTS: Record<ReviewId, Checklist> = {
+/** Everything about a routine except its items — the parts you can't edit. */
+export type ChecklistMeta = Omit<Checklist, 'items'>;
+
+export const CHECKLIST_META: Record<ReviewId, ChecklistMeta> = {
   morning: {
     id: 'morning',
     name: 'Morning Review',
     expedition: 'Ascend',
     blurb: 'Set the day up before it sets itself up for you.',
-    items: [
-      { id: 'lunch', label: 'Take lunch to fridge', points: 1, core: false },
-      { id: 'drink', label: 'Make a drink', points: 1, core: false },
-      { id: 'calendar', label: 'Review calendar', points: 1, core: false },
-      { id: 'email', label: 'Look at emails', points: 1, core: false },
-      { id: 'todoist', label: 'Look at Todoist for any tasks', points: 1, core: false },
-      {
-        id: 'priorities',
-        label: 'Review priorities for the day',
-        hint: 'What actually has to move today?',
-        points: 2,
-        core: true,
-      },
-      {
-        id: 'goals',
-        label: 'Look at 2026 goals and mentally rehearse them',
-        hint: 'Read them, then picture the year they add up to.',
-        points: 3,
-        core: true,
-      },
-    ],
   },
   daily: {
     id: 'daily',
     name: 'Daily Review',
     expedition: 'Descend',
     blurb: 'Close the loops so tomorrow starts clean.',
-    items: [
-      {
-        id: 'hubspot',
-        label: 'Look at HubSpot and update deal stages if needed',
-        points: 2,
-        core: false,
-      },
-      { id: 'inboxes', label: 'Clear email and Todoist inboxes', points: 2, core: false },
-      {
-        id: 'journal',
-        label: 'Clear bullet journal from today, plan for tomorrow',
-        hint: 'Kindle Scribe — today out, tomorrow in.',
-        points: 3,
-        core: true,
-      },
-      { id: 'dishes', label: 'Clean dishes, clear mugs from desk', points: 1, core: false },
-    ],
   },
+};
+
+const DEFAULT_ITEMS: Record<ReviewId, ChecklistItem[]> = {
+  morning: [
+    { id: 'lunch', label: 'Take lunch to fridge', points: 1, core: false },
+    { id: 'drink', label: 'Make a drink', points: 1, core: false },
+    { id: 'calendar', label: 'Review calendar', points: 1, core: false },
+    { id: 'email', label: 'Look at emails', points: 1, core: false },
+    { id: 'todoist', label: 'Look at Todoist for any tasks', points: 1, core: false },
+    {
+      id: 'priorities',
+      label: 'Review priorities for the day',
+      hint: 'What actually has to move today?',
+      points: 2,
+      core: true,
+    },
+    {
+      id: 'goals',
+      label: 'Look at 2026 goals and mentally rehearse them',
+      hint: 'Read them, then picture the year they add up to.',
+      points: 3,
+      core: true,
+    },
+  ],
+  daily: [
+    {
+      id: 'hubspot',
+      label: 'Look at HubSpot and update deal stages if needed',
+      points: 2,
+      core: false,
+    },
+    { id: 'inboxes', label: 'Clear email and Todoist inboxes', points: 2, core: false },
+    {
+      id: 'journal',
+      label: 'Clear bullet journal from today, plan for tomorrow',
+      hint: 'Kindle Scribe — today out, tomorrow in.',
+      points: 3,
+      core: true,
+    },
+    { id: 'dishes', label: 'Clean dishes, clear mugs from desk', points: 1, core: false },
+  ],
 };
 
 export const REVIEW_IDS: ReviewId[] = ['morning', 'daily'];
 
-export function getChecklist(id: ReviewId): Checklist {
-  return CHECKLISTS[id];
+/** A fresh copy of one routine's starting items — never the shared originals. */
+export function defaultItems(id: ReviewId): ChecklistItem[] {
+  return DEFAULT_ITEMS[id].map((item) => ({ ...item }));
+}
+
+/** A fresh copy of both routines' starting items, for a new save. */
+export function defaultChecklists(): Record<ReviewId, ChecklistItem[]> {
+  return { morning: defaultItems('morning'), daily: defaultItems('daily') };
 }
 
 /** Total points available in a review, excluding the full-clear bonus. */

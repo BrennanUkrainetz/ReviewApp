@@ -1,11 +1,14 @@
 /**
- * Settings: motion, sound, and the two data escape hatches.
+ * Settings: the review checklists, motion, sound, and the two data escape
+ * hatches.
  *
- * Deliberately short. Anything that belongs in a config file lives in
- * `src/config/`, not behind a toggle here.
+ * Deliberately short otherwise. Anything that belongs in a config file lives
+ * in `src/config/`, not behind a toggle here.
  */
+import { REVIEW_IDS } from '@/config/checklists';
 import { STORAGE_KEY, exportState, resetState } from '@/state/storage';
 import { updateSettings } from '@/state/actions';
+import { createChecklistEditor } from '../components/checklist-editor';
 import { confirmDialog } from '../components/confirm';
 import type { AppContext, Screen } from '../context';
 import { el } from '../dom';
@@ -59,7 +62,10 @@ export function createSettingsScreen(ctx: AppContext): Screen {
     const blob = new Blob([exportState(state())], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = el('a', {
-      attrs: { href: url, download: `aerie-save-${new Date().toISOString().slice(0, 10)}.json` },
+      attrs: {
+        href: url,
+        download: `aerie-save-${new Date().toISOString().slice(0, 10)}.json`,
+      },
     });
     link.click();
     URL.revokeObjectURL(url);
@@ -87,9 +93,22 @@ export function createSettingsScreen(ctx: AppContext): Screen {
     ),
     el(
       'div',
+      { class: 'settings__checklists' },
+      el('p', { class: 'section-label' }, 'Review checklists'),
+      el(
+        'p',
+        { class: 'settings__intro' },
+        'Edit the items you work through each day. Core items are the Floor — doing all of them keeps the streak alive on a bad day. Changes save as you make them and apply to your next review.',
+      ),
+      ...REVIEW_IDS.map((reviewId) => createChecklistEditor(ctx, reviewId)),
+    ),
+    el(
+      'div',
       { class: 'panel' },
       el('h3', { class: 'panel__title' }, 'Presentation'),
-      el('div', { class: 'settings__group' },
+      el(
+        'div',
+        { class: 'settings__group' },
         toggleRow(
           'reduce-motion',
           'Reduce motion',
@@ -125,7 +144,11 @@ export function createSettingsScreen(ctx: AppContext): Screen {
         { class: 'settings__actions' },
         el(
           'button',
-          { class: 'btn btn--secondary', attrs: { type: 'button' }, on: { click: onExport } },
+          {
+            class: 'btn btn--secondary',
+            attrs: { type: 'button' },
+            on: { click: onExport },
+          },
           'Export save file',
         ),
         el(
