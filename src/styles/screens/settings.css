@@ -184,7 +184,9 @@
   color: var(--color-text-muted);
 }
 
-.checklist-editor__core {
+/* Core and Optional share a shape — they are the two opposite answers to the
+   same question about an item, and sit side by side. */
+.checklist-editor__toggle {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -195,7 +197,7 @@
   cursor: pointer;
 }
 
-.checklist-editor__core-input {
+.checklist-editor__toggle-input {
   width: 18px;
   height: 18px;
   margin: 0;
@@ -203,14 +205,30 @@
   cursor: pointer;
 }
 
-.checklist-editor__core:has(.checklist-editor__core-input:checked) {
+.checklist-editor__toggle:has(.checklist-editor__toggle-input:checked) {
   border-color: var(--color-accent);
   background: color-mix(in srgb, var(--amber) 14%, transparent);
 }
 
-.checklist-editor__core:has(.checklist-editor__core-input:checked)
+.checklist-editor__toggle:has(.checklist-editor__toggle-input:checked)
   .checklist-editor__control-label {
   color: var(--color-accent);
+}
+
+/* Optional is the softer of the two: it forgives an item rather than
+   promoting it. */
+.checklist-editor__toggle--optional .checklist-editor__toggle-input {
+  accent-color: var(--color-accent-soft);
+}
+
+.checklist-editor__toggle--optional:has(.checklist-editor__toggle-input:checked) {
+  border-color: color-mix(in srgb, var(--mist) 45%, transparent);
+  background: color-mix(in srgb, var(--mist) 10%, transparent);
+}
+
+.checklist-editor__toggle--optional:has(.checklist-editor__toggle-input:checked)
+  .checklist-editor__control-label {
+  color: var(--color-accent-soft);
 }
 
 .checklist-editor__row-actions {

@@ -13,9 +13,12 @@ import {
   MIN_ASCENSION_AETHER,
 } from '@/config/ascension';
 import { getPerk, PERKS, type PerkDef } from '@/config/perks';
+import { BUILDING_MAX_LEVEL } from '@/config/tuning';
 import type { AerieState, AscensionState } from '@/state/types';
 import { achievementMultiplier } from './achievements';
+import { buildingCeiling, charterOutputMultiplier } from './charter';
 import { NO_RESEARCH, researchModsFrom, type ResearchMods } from './research';
+import { applySpecialties } from './specialties';
 
 /** Everything the perk tree changes, collapsed into one object. */
 export interface Mods {
@@ -35,6 +38,19 @@ export interface Mods {
   milestone: number;
   /** Share of the Lumen balance that survives an ascension. */
   carryLumen: number;
+  /** Multiplies the Aether an ascension grants. */
+  aether: number;
+  /** Extra mote charges granted per completed review. */
+  moteCharges: number;
+  /**
+   * How high any building may be raised right now — the charter's ceiling.
+   *
+   * It rides on `Mods` rather than being threaded through the economy as its
+   * own argument because every caller that prices or previews a purchase
+   * already carries mods. `NO_MODS` leaves it at the hard cap, so pure economy
+   * maths is unaffected by the charter unless a save is involved.
+   */
+  levelCeiling: number;
   /** Buildings rebuilt at the start of a run: the first `count` tiers, at `level`. */
   foothold: { count: number; level: number } | null;
   /** Everything the Cinder research tree changes. See `domain/research.ts`. */
@@ -51,6 +67,9 @@ export const NO_MODS: Mods = {
   drop: 0,
   milestone: 1,
   carryLumen: 0,
+  aether: 1,
+  moteCharges: 0,
+  levelCeiling: BUILDING_MAX_LEVEL,
   foothold: null,
   research: NO_RESEARCH,
 };
@@ -106,22 +125,29 @@ export function modsFromPerks(owned: readonly string[]): Mods {
 }
 
 /**
- * The authoritative `Mods` for a save: perks, plus the broad achievement
- * bonus folded into both Lumen sources.
+ * The authoritative `Mods` for a save: perks, research, achievements, the
+ * charter's ceiling and output bonus, and every standing building's specialty.
  *
- * Achievements land here rather than in their own multiplier because every
- * caller already threads `Mods` — one seam means a new modifier cannot be
- * accidentally left out of half the payouts.
+ * All of it lands here rather than in separate multipliers because every caller
+ * already threads `Mods` — one seam means a new modifier cannot be accidentally
+ * left out of half the payouts. Specialties are folded in *last*, so they
+ * multiply whatever the trees settled on rather than competing with it.
  */
 export function modsFor(state: AerieState): Mods {
   const mods = modsFromPerks(state.ascension.perks);
   const collected = achievementMultiplier(state.achievements);
-  return {
-    ...mods,
-    output: mods.output * collected,
-    review: mods.review * collected,
-    research: researchModsFrom(state.research),
-  };
+  const charter = charterOutputMultiplier(state.city.charter);
+
+  return applySpecialties(
+    {
+      ...mods,
+      output: mods.output * collected * charter,
+      review: mods.review * collected,
+      levelCeiling: buildingCeiling(state.city.charter),
+      research: researchModsFrom(state.research),
+    },
+    state.city.buildings,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,12 +166,18 @@ export function totalAetherFor(lifetimeLumen: number): number {
   return Math.floor((lifetimeLumen / ASCENSION_LUMEN_SCALE) ** ASCENSION_EXPONENT);
 }
 
-/** Aether ascending right now would pay. */
+/**
+ * Aether ascending right now would pay.
+ *
+ * The Aether Well and the Starwell multiply the grant (their specialty), and
+ * that multiplier is applied to the *total ever owed* rather than to the
+ * difference — otherwise levelling the Well would pay out again on Aether that
+ * had already been granted, which is the same double-dip the lifetime-total
+ * accounting exists to prevent.
+ */
 export function pendingAether(state: AerieState): number {
-  return Math.max(
-    0,
-    totalAetherFor(state.currency.lifetimeLumen) - state.ascension.aetherEarned,
-  );
+  const total = totalAetherFor(state.currency.lifetimeLumen) * modsFor(state).aether;
+  return Math.max(0, Math.floor(total) - state.ascension.aetherEarned);
 }
 
 /** Whether there is enough on the table for ascending to be worth it. */
@@ -158,12 +190,18 @@ export function canAscend(state: AerieState): boolean {
  * this far off" number on the ascension screen.
  */
 export function lumenForNextAether(state: AerieState): number {
-  const target = totalAetherFor(state.currency.lifetimeLumen) + 1;
-  let lumen = Math.ceil(target ** (1 / ASCENSION_EXPONENT) * ASCENSION_LUMEN_SCALE);
+  const grant = modsFor(state).aether;
+  const owed = (lifetime: number): number =>
+    Math.floor(totalAetherFor(lifetime) * grant);
+
+  const target = owed(state.currency.lifetimeLumen) + 1;
+  let lumen = Math.ceil(
+    (target / grant) ** (1 / ASCENSION_EXPONENT) * ASCENSION_LUMEN_SCALE,
+  );
   // Inverting a floored power lands a hair under the threshold about as often
   // as it lands on it, and a target that does not actually pay out is worse
   // than useless. Walk up until it genuinely does.
-  while (totalAetherFor(lumen) < target) lumen += 1;
+  while (owed(lumen) < target) lumen += 1;
   return lumen;
 }
 

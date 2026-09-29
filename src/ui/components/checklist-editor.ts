@@ -90,10 +90,13 @@ export function createChecklistEditor(ctx: AppContext, reviewId: ReviewId): HTML
     const saved = draft.filter((item) => item.label.trim() !== '');
     const points = saved.reduce((sum, item) => sum + item.points, 0);
     const core = saved.filter((item) => item.core).length;
-    summary.textContent = `${plural(saved.length, 'item')} · ${points} points · ${plural(
-      core,
-      'core item',
-    )} to hold the streak.`;
+    const optional = saved.filter((item) => item.optional).length;
+    summary.textContent =
+      `${plural(saved.length, 'item')} · ${points} points · ${plural(
+        core,
+        'core item',
+      )} to hold the streak` +
+      (optional > 0 ? ` · ${plural(optional, 'optional item')}.` : '.');
   }
 
   function moveFocus(target: FocusTarget): void {
@@ -119,6 +122,19 @@ export function createChecklistEditor(ctx: AppContext, reviewId: ReviewId): HTML
     const next = [...draft];
     next[index] = { ...item, ...patch };
     if (commit(next)) renderSummary();
+  }
+
+  /**
+   * Core and optional are opposites — one says the Floor needs this every day,
+   * the other says some days it isn't there to do. Turning either on turns the
+   * other off, and the row is redrawn so both boxes tell the truth.
+   */
+  function setFlag(index: number, flag: 'core' | 'optional', on: boolean): void {
+    const item = draft[index];
+    if (!item) return;
+    const next = [...draft];
+    next[index] = { ...item, core: false, optional: false, [flag]: on };
+    if (commit(next)) rerender({ index, selector: `.js-${flag}` });
   }
 
   function move(index: number, delta: number): void {
@@ -255,15 +271,30 @@ export function createChecklistEditor(ctx: AppContext, reviewId: ReviewId): HTML
       },
     });
 
-    const coreId = `core-${reviewId}-${item.id}`;
-    const coreInput = el('input', {
-      class: 'checklist-editor__core-input',
-      attrs: { type: 'checkbox', id: coreId, checked: item.core },
-      on: {
-        change: (event) =>
-          edit(index, { core: (event.target as HTMLInputElement).checked }),
-      },
-    });
+    const flagToggle = (
+      flag: 'core' | 'optional',
+      label: string,
+      title: string,
+    ): HTMLElement => {
+      const id = `${flag}-${reviewId}-${item.id}`;
+      const input = el('input', {
+        class: ['checklist-editor__toggle-input', `js-${flag}`],
+        attrs: { type: 'checkbox', id, checked: item[flag] === true },
+        on: {
+          change: (event) =>
+            setFlag(index, flag, (event.target as HTMLInputElement).checked),
+        },
+      });
+      return el(
+        'label',
+        {
+          class: ['checklist-editor__toggle', `checklist-editor__toggle--${flag}`],
+          attrs: { for: id, title },
+        },
+        input,
+        el('span', { class: 'checklist-editor__control-label' }, label),
+      );
+    };
 
     return el(
       'li',
@@ -278,11 +309,15 @@ export function createChecklistEditor(ctx: AppContext, reviewId: ReviewId): HTML
           el('span', { class: 'checklist-editor__control-label' }, 'Points'),
           pointsInput,
         ),
-        el(
-          'label',
-          { class: 'checklist-editor__core', attrs: { for: coreId } },
-          coreInput,
-          el('span', { class: 'checklist-editor__control-label' }, 'Core'),
+        flagToggle(
+          'core',
+          'Core',
+          'Part of the Floor — doing every core item holds the streak.',
+        ),
+        flagToggle(
+          'optional',
+          'Optional',
+          "Doesn't apply every day. Skipping it costs no points and still allows a full clear.",
         ),
         el(
           'div',

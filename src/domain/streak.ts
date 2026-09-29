@@ -2,14 +2,20 @@
  * Streak continuity rules.
  *
  * Two things keep a streak alive: completing a review at floor tier or above,
- * or explicitly marking a day off. Letting a whole calendar day pass with
- * neither breaks the run back to 0, detected the next time the app opens.
+ * or explicitly marking a day off. Letting a whole *weekday* pass with neither
+ * breaks the run back to 0, detected the next time the app opens.
+ *
+ * Weekends are not days here. They can't be missed, they don't extend anything,
+ * and a Friday review carries the run straight through to Monday — the routine
+ * is a working-week habit, so a week of Monday-to-Friday reviews is a week
+ * kept, not a week broken. A review logged on a Saturday is welcome and still
+ * pays, but it is a bonus: it moves neither the streak nor heat.
  *
  * The main streak is stored (it's the number Brennan sees every day). The
  * full-clear streak is *derived* from history so the two can never drift.
  */
 import type { AerieState, DayRecord, Tier } from '@/state/types';
-import { addDays, daysBetween, type DateKey } from './dates';
+import { addDays, isWeekend, missedWeekdays, type DateKey } from './dates';
 
 /** Reads a day's record out of history, if there is one. */
 export function findDay(history: DayRecord[], date: DateKey): DayRecord | undefined {
@@ -22,11 +28,11 @@ export function emptyDay(date: DateKey): DayRecord {
 }
 
 /**
- * Applies the "a missed day breaks the run" rule.
+ * Applies the "a missed weekday breaks the run" rule.
  *
  * Returns the streak state as it should be *now*, given the last day that kept
  * continuity. Safe to call on every app open; it is a no-op when the run is
- * still alive.
+ * still alive — including all weekend, and on Monday before anything is logged.
  */
 export function reconcileStreak(state: AerieState, today: DateKey): AerieState {
   const { lastActiveDate, current } = state.streak;
@@ -36,22 +42,27 @@ export function reconcileStreak(state: AerieState, today: DateKey): AerieState {
     return { ...state, streak: { ...state.streak, current: 0 } };
   }
 
-  const gap = daysBetween(lastActiveDate, today);
-  // gap 0 = active today, gap 1 = active yesterday and today is still open.
-  if (gap <= 1) return state;
+  // Today itself doesn't count against the run: it is still open.
+  if (missedWeekdays(lastActiveDate, today) === 0) return state;
 
   return { ...state, streak: { ...state.streak, current: 0 } };
 }
 
-/** True when today's activity should push the streak up by one. */
+/**
+ * True when today's activity should push the streak up by one. Weekend work is
+ * a bonus rather than a rung on the ladder, so it never advances.
+ */
 export function shouldAdvanceStreak(state: AerieState, today: DateKey): boolean {
-  return state.streak.lastCompletedDate !== today;
+  return !isWeekend(today) && state.streak.lastCompletedDate !== today;
 }
 
 /**
  * Advances the streak for a qualifying review completion. Only the first
- * qualifying review of a day counts — doing both reviews is worth more Lumen,
- * not more streak.
+ * qualifying review of a weekday counts — doing both reviews is worth more
+ * Lumen, not more streak, and a weekend review is worth Lumen only.
+ *
+ * The weekend case still stamps `lastActiveDate`, which costs nothing: the
+ * continuity check ignores weekends either way.
  */
 export function advanceStreak(state: AerieState, today: DateKey): AerieState {
   if (!shouldAdvanceStreak(state, today)) {
@@ -74,8 +85,14 @@ export function advanceStreak(state: AerieState, today: DateKey): AerieState {
   };
 }
 
-/** Marks today as a deliberate day off: continuity held, streak unchanged. */
+/**
+ * Marks today as a deliberate day off: continuity held, streak unchanged.
+ *
+ * A no-op on a weekend — those are already off, and spending one of the days
+ * off you get credit for on a Saturday would be spending it on nothing.
+ */
 export function markDayOff(state: AerieState, today: DateKey): AerieState {
+  if (isWeekend(today)) return state;
   return {
     ...state,
     streak: {
@@ -96,9 +113,9 @@ function bestTier(day: DayRecord): Tier {
 }
 
 /**
- * Consecutive days ending today (or yesterday, if today isn't done yet) with
- * at least one full clear. Days off are neutral — they neither break nor
- * extend it. Bragging-rights stat only; nothing depends on it.
+ * Consecutive weekdays ending today (or the last weekday, if today isn't done
+ * yet) with at least one full clear. Weekends and days off are both neutral —
+ * they neither break the run nor extend it.
  */
 export function fullClearStreak(history: DayRecord[], today: DateKey): number {
   const byDate = new Map(history.map((day) => [day.date, day]));
@@ -106,6 +123,10 @@ export function fullClearStreak(history: DayRecord[], today: DateKey): number {
   let cursor = today;
 
   for (let guard = 0; guard < 3650; guard += 1) {
+    if (isWeekend(cursor)) {
+      cursor = addDays(cursor, -1);
+      continue;
+    }
     const day = byDate.get(cursor);
     if (!day) {
       // Today being unfinished is fine; any earlier hole ends the run.

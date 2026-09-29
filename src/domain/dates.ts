@@ -4,6 +4,12 @@
  *
  * Dates are passed around as `YYYY-MM-DD` strings (`DateKey`) so they compare,
  * sort, and serialise without timezone surprises.
+ *
+ * Aerie runs on the working week. Saturday and Sunday are not days you can miss
+ * — they are not days at all as far as the routine is concerned — so anything
+ * that asks "was a day skipped?" counts weekdays, not calendar days. That rule
+ * lives here, in `isWeekend`/`missedWeekdays`/`addWeekdays`, so the streak, heat
+ * and achievements all read it from the same place.
  */
 
 export type DateKey = string;
@@ -46,6 +52,53 @@ export function addDays(key: DateKey, offset: number): DateKey {
   const date = fromDateKey(key);
   date.setDate(date.getDate() + offset);
   return toDateKey(date);
+}
+
+/** Saturday or Sunday — a day Aerie does not expect anything on. */
+export function isWeekend(key: DateKey): boolean {
+  const weekday = fromDateKey(key).getDay();
+  return weekday === 0 || weekday === 6;
+}
+
+/** Monday through Friday — the days the routine actually runs on. */
+export function isWeekday(key: DateKey): boolean {
+  return !isWeekend(key);
+}
+
+/** A Monday, so `weekdaysBefore` can count in whole weeks from a known start. */
+const WEEKDAY_ORIGIN: DateKey = '2000-01-03';
+
+/** How many weekdays fall strictly before `key`, counted from a fixed Monday. */
+function weekdaysBefore(key: DateKey): number {
+  const days = daysBetween(WEEKDAY_ORIGIN, key);
+  const weeks = Math.floor(days / 7);
+  const rest = days - weeks * 7; // 0 = Monday … 6 = Sunday
+  return weeks * 5 + Math.min(rest, 5);
+}
+
+/**
+ * Weekdays strictly between two keys — the days that were genuinely skipped.
+ *
+ * This is the whole weekday rule in one number. Friday to Monday is 0 (nothing
+ * was missed over the weekend); Friday to Tuesday is 1 (Monday was). Neither
+ * endpoint counts: `from` was accounted for, and `to` is usually today, which
+ * is still open.
+ */
+export function missedWeekdays(from: DateKey, to: DateKey): number {
+  const between = weekdaysBefore(to) - weekdaysBefore(from) - (isWeekday(from) ? 1 : 0);
+  return Math.max(0, between);
+}
+
+/** The key `offset` *weekdays* away from `key`, stepping over weekends. */
+export function addWeekdays(key: DateKey, offset: number): DateKey {
+  const step = offset < 0 ? -1 : 1;
+  let cursor = key;
+  for (let i = 0; i < Math.abs(offset); i += 1) {
+    do {
+      cursor = addDays(cursor, step);
+    } while (isWeekend(cursor));
+  }
+  return cursor;
 }
 
 /** Long human form, e.g. `July 21`. Used in plain, factual history copy. */

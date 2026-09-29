@@ -92,6 +92,33 @@ describe('migrate', () => {
     expect(migrated.city.buildings).toEqual([{ id: 'greenhouse', level: 2 }]);
   });
 
+  // The charter caps every building's level, and arrived long after these saves
+  // did. Granting the charter their city had already earned is the difference
+  // between "here is a new thing to aim at" and "your city is frozen".
+  it('grants a pre-charter save the charter its city already earned', () => {
+    const migrated = migrate({
+      city: {
+        buildings: [
+          { id: 'greenhouse', level: 66 },
+          { id: 'lighthouse', level: 2 },
+        ],
+      },
+    });
+    expect(migrated.city.charter).toBe(3);
+    expect(migrated.city.buildings).toHaveLength(2);
+  });
+
+  it('never lets a saved charter sit below the city it governs', () => {
+    const migrated = migrate({
+      city: { charter: 1, buildings: [{ id: 'greenhouse', level: 140 }] },
+    });
+    expect(migrated.city.charter).toBe(6);
+  });
+
+  it('starts an empty city at the first charter', () => {
+    expect(migrate({}).city.charter).toBe(1);
+  });
+
   it('back-fills lastActiveDate from a pre-day-off save', () => {
     const migrated = migrate({ streak: { current: 3, lastCompletedDate: '2026-07-20' } });
     expect(migrated.streak.lastActiveDate).toBe('2026-07-20');

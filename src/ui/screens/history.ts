@@ -11,6 +11,7 @@ import {
   addDays,
   daysBetween,
   formatShortDay,
+  isWeekend,
   today,
   type DateKey,
 } from '@/domain/dates';
@@ -69,7 +70,13 @@ export function createHistoryScreen(ctx: AppContext): Screen {
     );
   }
 
-  /** Every day from the first record to today, so gaps are visible as gaps. */
+  /**
+   * Every weekday from the first record to today, so gaps are visible as gaps.
+   *
+   * Weekends are left out — a Saturday with nothing on it is not a gap, and a
+   * row saying so twice a week would bury the ones that mean something. A
+   * weekend that *was* worked still appears; it happened, so it is on the log.
+   */
   function timeline(state: AerieState): { date: DateKey; day: DayRecord | undefined }[] {
     const end = today();
     const first = state.history[0]?.date;
@@ -80,6 +87,7 @@ export function createHistoryScreen(ctx: AppContext): Screen {
     const days: { date: DateKey; day: DayRecord | undefined }[] = [];
     for (let offset = span; offset >= 0; offset -= 1) {
       const date = addDays(first, offset);
+      if (isWeekend(date) && !byDate.has(date)) continue;
       days.push({ date, day: byDate.get(date) });
     }
     return days;
@@ -136,9 +144,9 @@ export function createHistoryScreen(ctx: AppContext): Screen {
 
     replaceChildren(
       stats,
-      statTile('Current streak', String(state.streak.current), 'days in a row'),
-      statTile('Longest streak', String(state.streak.longest), 'days'),
-      statTile('Full-clear streak', String(fullClears), 'days every item done'),
+      statTile('Current streak', String(state.streak.current), 'weekdays in a row'),
+      statTile('Longest streak', String(state.streak.longest), 'weekdays'),
+      statTile('Full-clear streak', String(fullClears), 'weekdays every item done'),
       statTile(
         'Real rewards earned',
         String(state.milestones.totalBigMilestonesHit),
@@ -187,9 +195,9 @@ export function createHistoryScreen(ctx: AppContext): Screen {
   }
 
   /**
-   * Every achievement, earned or not, grouped. Locked ones show their name but
-   * not how to get them — the list is a map of the game, not a checklist to
-   * grind, and a spoiled surprise is worth less than a discovered one.
+   * Every achievement, earned or not, grouped. Locked ones read the same as
+   * earned ones, only unhighlighted: a badge you can see the shape of is
+   * something to aim at, and a hidden one is just a surprise you can't plan for.
    */
   function renderBadges(state: AerieState): void {
     const earned = new Set(state.achievements);
@@ -218,10 +226,10 @@ export function createHistoryScreen(ctx: AppContext): Screen {
                 'li',
                 {
                   class: ['badge-card', has && 'badge-card--earned'],
-                  attrs: { title: has ? entry.detail : 'Not earned yet' },
+                  attrs: { title: has ? entry.detail : `Not earned yet — ${entry.detail}` },
                 },
                 el('span', { class: 'badge-card__name' }, entry.name),
-                has ? el('span', { class: 'badge-card__detail' }, entry.detail) : null,
+                el('span', { class: 'badge-card__detail' }, entry.detail),
               );
             }),
           ),

@@ -98,7 +98,7 @@ export function createSettingsScreen(ctx: AppContext): Screen {
       el(
         'p',
         { class: 'settings__intro' },
-        'Edit the items you work through each day. Core items are the Floor — doing all of them keeps the streak alive on a bad day. Changes save as you make them and apply to your next review.',
+        'Edit the items you work through each day. Core items are the Floor — doing all of them keeps the streak alive on a bad day. Optional items are the opposite: mark the ones that only apply some days, and skipping them costs no points and still leaves a full clear on the table. Changes save as you make them and apply to your next review.',
       ),
       ...REVIEW_IDS.map((reviewId) => createChecklistEditor(ctx, reviewId)),
     ),

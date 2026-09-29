@@ -6,6 +6,25 @@
 /** Lumen awarded per checklist point, before the streak multiplier. */
 export const LUMEN_PER_POINT = 10;
 
+/**
+ * What a full clear pays as a share of the city's daily output, pro-rated by
+ * points — half a review earns half of it.
+ *
+ * Every other Lumen source already scales with the city: a mote takes a share
+ * of output, milestone and contract bonuses take a share of the day. The flat
+ * per-point rate did not, so by the time the city produced tens of thousands a
+ * day the checklist — the only part of this app that is actual work — was
+ * paying rounding error beside its own bonuses.
+ *
+ * The larger of the two figures wins. The flat rate carries the opening days,
+ * while the city makes less than a few hundred a day; the share carries
+ * everything after. At this number two full clears come to a little under a
+ * day of city output before streak and heat, and comfortably over it with them
+ * — which puts the routine back at the top of the income table, where the
+ * whole design says it belongs.
+ */
+export const REVIEW_SHARE_OF_OUTPUT = 0.4;
+
 /** Bonus points added on top when a review is cleared completely. */
 export const FULL_CLEAR_BONUS_POINTS = 2;
 
@@ -114,14 +133,40 @@ export const BUILDING_COST_GROWTH = 1.11;
 export const BUILDING_MAX_LEVEL = 200;
 
 /**
- * Levels at which a building's output doubles. These are what stop a tier
- * going stale: the level right after a milestone is always the best buy on the
- * board, which is the whole "one more level" pull.
+ * A building's output doubles every this many levels, all the way to the
+ * ceiling — level 10, 20, 30, and so on.
+ *
+ * This interval is the single number that decides whether levelling a building
+ * stays worth doing. Cost grows `BUILDING_COST_GROWTH ^ level`, so income has
+ * to grow geometrically too or every tier dies at the same level and the only
+ * real progress is unlocking the next one.
+ *
+ * The break-even interval is `ln 2 / ln 1.11 ≈ 6.6` — at that spacing a level
+ * pays back in the same 2.5 days at level 200 as at level 1, and *what* you buy
+ * stops mattering. At 10 the payback roughly doubles every 21 levels: a level-66
+ * building is a 38-day buy rather than a 306-day one, so old tiers stay live for
+ * a long while, but a freshly unlocked tier at 2.5 days is still a real event.
+ *
+ * The doublings used to sit at 10/25/50/100/150/200 — six of them across the
+ * whole range, against a cost curve that grew a billionfold. That made every
+ * building below the frontier a trap, which is exactly what it felt like.
  */
-export const BUILDING_MILESTONE_LEVELS = [10, 25, 50, 100, 150, 200];
+export const BUILDING_MILESTONE_INTERVAL = 10;
 
 /** Output multiplier granted by each milestone level passed. */
 export const BUILDING_MILESTONE_MULTIPLIER = 2;
+
+/**
+ * A building advances its **specialty** every this many levels — a much coarser
+ * cadence than the output doublings, and deliberately so.
+ *
+ * Doublings answer "is this level worth buying". Specialties answer "why this
+ * building rather than that one": each tier improves one thing no other tier
+ * touches (see `specialty` in `config/shop.ts`), so the Greenhouse is worth
+ * levelling for its Cinder even in the stretch where the Lighthouse pays more
+ * Lumen. Five steps across the full range, at 40 / 80 / 120 / 160 / 200.
+ */
+export const SPECIALTY_INTERVAL = 40;
 
 /** Every *distinct* building standing adds this to the city's whole output. */
 export const DISTRICT_BONUS_PER_BUILDING = 0.02;
@@ -132,6 +177,61 @@ export const DISTRICT_BONUS_PER_BUILDING = 0.02;
  * screen, and never a wall of unreachable ones.
  */
 export const BUILDING_REVEAL_FRACTION = 0.4;
+
+/* ------------------------------------------------------------------ */
+/* The charter — what the Hearth Hall is for                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Hearth Hall has stood at the centre of the city since the first day and
+ * has never done anything. It is now the **charter**: the ceiling on how high
+ * any building may be raised, and the one thing that cannot be bought with
+ * Lumen alone.
+ *
+ * Doublings every ten levels make levelling worthwhile again, but on their own
+ * they also make it optimal to pour everything into whichever building is
+ * cheapest and ignore the rest. The charter is what stops that. Raising it does
+ * not ask for money so much as for *breadth* — one more kind of building, at
+ * the height the last charter allowed — and only then does the ceiling lift.
+ *
+ * So the loop is: level everything up to the ceiling, widen the city, raise the
+ * charter, repeat. Nothing is ever revoked; a save that already stands above
+ * its ceiling keeps every level it has (see `migrate`), it simply cannot add
+ * more until the charter catches up.
+ */
+
+/** Charter 1 is free — the Hearth Hall is there from the first day. */
+export const CHARTER_MIN_LEVEL = 1;
+
+/** The last charter. Its ceiling is `BUILDING_MAX_LEVEL` exactly. */
+export const CHARTER_MAX_LEVEL = 8;
+
+/** Each charter raises every building's ceiling by this many levels. */
+export const CHARTER_LEVELS_PER_STEP = 25;
+
+/**
+ * Charter `L` needs `L + 1` distinct buildings standing at level
+ * `CHARTER_LEVELS_PER_STEP * (L - 1)` or higher — one more kind than the last
+ * charter asked for, at the height the last charter allowed.
+ */
+export const CHARTER_KINDS_OVER_LEVEL = 1;
+
+/**
+ * Price of the next charter, as days of the city's own output.
+ *
+ * A share of the day rather than a curve of its own, like every other cost in
+ * this file that has to stay meaningful across twelve orders of magnitude. The
+ * requirement above is the real gate; this is what stops a charter being free
+ * the moment it is met. Three days is a little over two full collections, so it
+ * is felt without ever being a wall.
+ */
+export const CHARTER_COST_DAYS = 3;
+
+/** Floor under that, for the opening days when the city produces almost nothing. */
+export const CHARTER_MIN_COST = 250;
+
+/** Every charter past the first adds this to the whole city's output. */
+export const CHARTER_OUTPUT_PER_LEVEL = 0.15;
 
 /* ------------------------------------------------------------------ */
 /* Heat — the full-clear combo                                         */
@@ -169,6 +269,19 @@ export const MOTE_CHARGES_PER_REVIEW = 3;
 /** Each mote pays this share of the city's daily output, with a flat floor. */
 export const MOTE_SHARE_OF_OUTPUT = 0.15;
 export const MOTE_FLOOR_LUMEN = 25;
+
+/**
+ * Motes flee the cursor, so catching one is a small chase. Catch the next
+ * before this window closes and the chain holds, paying a step more each link.
+ *
+ * The chain is the only skill in the app, so it is upside only: a slow catch
+ * still pays full base value. A perfect run of three is worth a little over
+ * half again as much as three lazy ones — enough to be worth chasing, never
+ * enough to make a missed chain feel like a loss.
+ */
+export const MOTE_CHAIN_WINDOW_MS = 2600;
+export const MOTE_CHAIN_STEP = 0.75;
+export const MOTE_CHAIN_MAX = 3;
 
 /* ------------------------------------------------------------------ */
 /* Achievements                                                        */

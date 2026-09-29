@@ -28,6 +28,29 @@ has to hold continuity without advancing the streak, which needs two dates, not
 one. Saves written before that field existed back-fill it from
 `lastCompletedDate`.
 
+## The week is five days long
+
+The reviews are a working-week routine, so the streak counts weekdays. Under
+the old calendar-day rule a perfect Monday-to-Friday week still broke on
+Saturday, which meant the number could only ever be kept by working weekends —
+it was measuring availability, not the habit.
+
+One helper carries the whole rule: `missedWeekdays(from, to)` in
+`domain/dates.ts` counts the weekdays *strictly between* two days, so Friday to
+Monday is 0 and Friday to Tuesday is 1. Continuity, heat, and the historical
+achievement runs all ask that one question, which is why a weekend can't mean
+one thing to the streak and another to heat.
+
+Weekend work is deliberately upside-only: it pays Lumen and it goes on the
+record, but it moves neither the streak nor heat. Letting it count would make
+the weekend optional-but-rewarded, which is exactly the pressure this change
+exists to remove. Taking a day off is refused on a weekend for the same reason
+— there is no run to hold open, and the day off would be spent on nothing.
+
+Two achievements had a seven-day week baked into them and now name the real
+one: `streak-7` ("A Full Week") is five, and `perfect-week` is five. Their ids
+are what saves store, so the ids stayed put.
+
 ## A third tier below the floor
 
 The spec names two tiers. Scoring has three: skipping a core item is graded
@@ -35,6 +58,39 @@ The spec names two tiers. Scoring has three: skipping a core item is graded
 it doesn't count toward the streak. The alternative — silently promoting a
 partial run to a floor pass — would make the floor meaningless, and refusing to
 log it at all would punish the exact bad day the floor exists for.
+
+## Optional items are set aside, not skipped
+
+Some steps only apply some days — taking lunch to the fridge is nothing to do
+on a day worked from home. Before this, skipping one cost its points *and* the
+full clear, which turned working from home into a worse review.
+
+An item can now be marked `optional`. Skipping one takes it out of both sides
+of the fraction: its points leave `basePoints` (it wasn't done) and they leave
+`availablePoints` and `fullClearPoints` too, so the run is graded on the
+shorter checklist it actually was. A clear with a step set aside is a full
+clear — same tier, same bonus, same streak, same Cinder — and because the city
+share is pro-rated against `fullClearPoints`, it pays the same Lumen as a day
+when every item applied.
+
+Three consequences worth knowing:
+
+- **Optional and core are opposites, and core wins.** The Floor is the set of
+  things that always apply, so an item can't be part of it *and* be excusable.
+  `sanitizeItems` drops `optional` from anything core; the editor turns one off
+  when the other goes on, rather than letting the sanitiser silently decide.
+- **A run with nothing done never grades above `none`.** Without that guard, a
+  routine made entirely of optional items would read as a full clear when every
+  item was skipped: nothing missed, no core item outstanding, bonus paid for
+  doing nothing.
+- **The summary shows the day's ceiling, not the checklist's.** `basePoints` is
+  displayed against `availablePoints`, so a clear reads as N of N instead of
+  leaving a gap that couldn't be closed. Skipped and set-aside items are listed
+  in separate blocks, because one is a miss and the other isn't.
+
+The default morning routine ships with the lunch item marked optional — it is
+the case that prompted this — but nothing else, since the flag should be the
+exception a routine reaches for rather than its normal state.
 
 ## Checklist items are save data; the wrapper copy stays in config
 
@@ -178,6 +234,32 @@ left at ×1.4 — the routine's own number should not be competing with the
 economy for attention. And **ascension never resets the streak, the history, or
 the real-world milestone count**: those record what actually happened, and a
 game mechanic has no business editing them.
+
+## The review payout is a share of the city, not a flat rate per point
+
+The product written above — `points × streak × heat × city output × …` — was
+only ever half true in the code. The review's own line was
+`points × LUMEN_PER_POINT × streak × heat`, with the city entering the chest
+solely through the milestone and contract shares. Flat times a bounded
+multiplier is a constant, and a constant loses to an exponential fast: at a city
+producing 64k a day the review paid **238**, next to a contract bonus of 25.6k
+struck against that same city. The one screen in the app that is actual work was
+paying the least of anything on it.
+
+So the review now takes `REVIEW_SHARE_OF_OUTPUT` of the city's daily output at a
+full clear, pro-rated by points, and the flat rate survives as the *floor* under
+it — `max(flat, share)`, not a sum, so exactly one rule is doing the work at any
+scale. The flat rate covers the first days; the share covers the rest of the
+game. That makes the code match the decision above, and puts the routine back at
+the top of the income table: reviews now out-earn the vault, the motes and the
+contract, which is the order the whole design assumes.
+
+Two knock-ons, both wanted. The share is pro-rated against
+`score.fullClearPoints` — what a full clear of *that* checklist scores — so
+editing a routine to be longer re-normalises instead of quietly raising the
+rate. And because milestone and contract bonuses are shares of
+`heatedReview + heatedPassive`, they now ride the review's quality too: a chest
+opened on a full clear is bigger in every row, not just the first.
 
 ## Aether is calculated from all-time earnings, not the run
 
@@ -340,3 +422,83 @@ set the chest's colours; it now also sets `--burst-scale`, which the spark throw
 and the aura ring multiply through, and the beacon chest carries its own warm
 halo. One variable, so the burst scales with rarity without a second copy of the
 open animation.
+
+## Payback depends on a building's level, not on its tier
+
+Reported as a balance bug: at Greenhouse 66 an upgrade cost 19.6K for +196 a
+day, while a Lighthouse at level 2 cost 50K for +22K a day. The obvious reading
+is that the Greenhouse is a trap and the ladder is mis-tuned.
+
+It was not the tier. Every building holds `baseCost / incomePerLevel` near 2.5,
+so at *equal levels* all twenty tiers pay back within about 4% of each other.
+What differed was that one building was at level 66 and the other at level 1.
+
+The actual defect was upstream of that. Cost grows `1.11 ^ level`; income grew
+linearly with six doublings scattered at 10/25/50/100/150/200. Across the full
+range that is ×64 of income against ×1.5 billion of cost, so **every** building
+died at the same level and the only real progress was unlocking the next tier.
+The Greenhouse was not dominated by the Lighthouse — it was dominated by its own
+height, and so was everything else.
+
+`BUILDING_MILESTONE_INTERVAL` replaces the list: a doubling every ten levels,
+forever. Break-even is `ln 2 / ln 1.11 ≈ 6.6`, at which payback is flat and
+*what* you buy stops mattering entirely; ten keeps a gentle decay, so a
+level-66 building is a 3–4 day buy rather than a 306-day one while a freshly
+unlocked tier is still the best thing on the board.
+
+## Each building improves one thing no other building does
+
+The consequence of the above is that Lumen can no longer distinguish the tiers —
+if payback is near enough equal everywhere, "which should I level" has no answer
+and the ladder is one curve drawn twenty times.
+
+So every building carries a **specialty**: the Greenhouse pays flat Cinder per
+full clear, the Windmill fills the vault faster, the Lighthouse makes motes
+worth more, the Foundry holds heat longer, the Starforge discounts building
+prices. One step per `SPECIALTY_INTERVAL` (40) levels, five in all, and no two
+tiers on the home cluster share a kind — enforced by a test, because a duplicate
+would quietly put the problem back.
+
+Every effect was deliberately chosen from a field that already existed on `Mods`
+or `ResearchMods`. `applySpecialties` folds them in at the end of `modsFor`, so
+a specialty reaches the vault, the chest or the streak through the same seam a
+perk or a research node does, and none of those systems needed a second code
+path. Folding them in *last* means they multiply whatever the trees settled on
+rather than competing with it — the point of the Starforge is that it does
+something your perks cannot.
+
+## The Hearth Hall holds the charter, and the charter is a ceiling
+
+Denser doublings create a new failure mode: with payback roughly equal
+everywhere, the optimal play is to pick whichever building is cheapest per level
+and pour everything into that one forever. Nothing in the arithmetic says stop.
+
+The Hearth Hall says stop. It has stood at the centre of the home island since
+the first day and never done anything; it now holds the city's **charter**,
+which is the highest level any building may be raised to. Crucially it does not
+lift for money — charter `L` wants one more *kind* of building than the last
+one did, standing at the height the last charter allowed (charter 4 wants five
+kinds at level 75). The Lumen price is three days of the city's own output, a
+speed bump rather than the gate.
+
+The loop is level everything to the ceiling, widen the city, raise the charter,
+repeat — which is the same loop the ladder always implied, now with something
+actually enforcing it.
+
+Two rules keep it from ever being punitive. It never revokes a level: a building
+standing above its ceiling keeps every level it has and is simply held. And
+`migrate` grants a pre-charter save the charter its city had already earned, so
+nobody opens the app to a city frozen behind a rule that did not exist the day
+before. The charter resets with the city on ascension — keeping it would hand
+every later run a free ceiling and a free output multiplier, which is what perks
+are for.
+
+## The shop quotes payback, not just the Lumen gain
+
+`+196` beside `+22.0K` is not a comparison; it is two numbers with no shared
+scale, and reading it as "the Greenhouse is broken" was the correct inference
+from what the card showed. Every building card now leads with review-days to
+break even, one card carries a `Best buy` badge (the shortest payback that is
+actually affordable at the selected amount), and a line under the grid states
+the rule outright: what a level costs depends on how high the building already
+is, not on which building it is.

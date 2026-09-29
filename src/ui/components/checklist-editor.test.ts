@@ -42,6 +42,14 @@ function type(input: HTMLInputElement | null | undefined, value: string): void {
 const click = (selector: string, index = 0): void =>
   rows()[index]?.querySelector<HTMLButtonElement>(selector)?.click();
 
+/** Ticks a flag checkbox in a row and fires the `change` the editor commits on. */
+function check(row: HTMLElement | undefined, selector: string): void {
+  const input = row?.querySelector<HTMLInputElement>(selector);
+  if (!input) throw new Error(`no ${selector} toggle`);
+  input.checked = true;
+  input.dispatchEvent(new Event('change'));
+}
+
 const morningLabels = (store: Store): string[] =>
   store.getState().checklists.morning.map((item) => item.label);
 
@@ -92,14 +100,23 @@ describe('checklist editor', () => {
 
   it('toggles an item into the floor', () => {
     const { store } = setup();
-    const core = rows()[0]?.querySelector<HTMLInputElement>(
-      '.checklist-editor__core-input',
-    );
-    if (!core) throw new Error('no core toggle');
-    core.checked = true;
-    core.dispatchEvent(new Event('change'));
-
+    check(rows()[0], '.js-core');
     expect(store.getState().checklists.morning[0]?.core).toBe(true);
+  });
+
+  it('toggles an item as optional, and core and optional exclude each other', () => {
+    const { store } = setup();
+    const item = () => store.getState().checklists.morning[0];
+
+    check(rows()[0], '.js-optional');
+    expect(item()?.optional).toBe(true);
+    expect(item()?.core).toBe(false);
+
+    // Marking the same item core has to clear optional: the Floor can't be
+    // held by a step some days don't call for.
+    check(rows()[0], '.js-core');
+    expect(item()?.core).toBe(true);
+    expect(item()?.optional).toBeUndefined();
   });
 
   it('reorders items and keeps the rendered list in step', () => {

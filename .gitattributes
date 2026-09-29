@@ -1,0 +1,4 @@
+# cmd.exe seeks batch labels by byte offset and mis-parses LF-only files
+# ("The system cannot find the batch label specified"), so keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf

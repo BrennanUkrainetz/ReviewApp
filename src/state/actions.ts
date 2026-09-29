@@ -8,13 +8,20 @@ import { getResearch } from '@/config/research';
 import { BUILDINGS, getBuilding, getCosmetic } from '@/config/shop';
 import {
   BUILDING_MAX_LEVEL,
+  CHARTER_MIN_LEVEL,
+  MOTE_CHAIN_MAX,
   MOTE_CHARGES_PER_REVIEW,
   MOTE_FLOOR_LUMEN,
   MOTE_SHARE_OF_OUTPUT,
 } from '@/config/tuning';
-import { today as todayKey } from '@/domain/dates';
+import { isWeekend, today as todayKey } from '@/domain/dates';
 import { newlyEarned } from '@/domain/achievements';
 import { canAscend, modsFor, pendingAether } from '@/domain/ascension';
+import {
+  buildingCeiling,
+  charterEarnedBy,
+  charterProgress,
+} from '@/domain/charter';
 import { contractBonus, contractFor, contractJustSettled } from '@/domain/contracts';
 import { heatDays, heatMultiplier } from '@/domain/heat';
 import { cinderFor } from '@/domain/research';
@@ -155,11 +162,17 @@ export function completeReview(
   const streakBefore = before.streak.current;
   const streakAfter = advancedStreak ? streakBefore + 1 : streakBefore;
 
-  const reviewLumen = lumenFor(score.points, streakAfter, mods);
   // What the city is worth per day. It is not paid here — the vault accrues it
-  // around the clock — but the milestone and contract shares are struck against
-  // it, so a large city still opens a large chest.
+  // around the clock — but every share in the chest is struck against it, so a
+  // large city still opens a large chest.
   const passiveLumen = cityOutput(before.city.buildings, mods);
+  // The review's own payout is one of those shares now, pro-rated by points.
+  // A flat per-point rate stopped being a reward the moment the city outgrew
+  // it, and the checklist is the one thing here that is real work.
+  const reviewLumen = lumenFor(score.points, streakAfter, mods, {
+    cityOutput: passiveLumen,
+    fullClearPoints: score.fullClearPoints,
+  });
 
   // Milestones only fire on the day the streak actually moves.
   const { hit, milestones } = advancedStreak
@@ -245,7 +258,8 @@ export function completeReview(
         date,
         remaining:
           (state.motes.date === date ? state.motes.remaining : 0) +
-          MOTE_CHARGES_PER_REVIEW,
+          MOTE_CHARGES_PER_REVIEW +
+          Math.floor(mods.moteCharges),
         caught: state.motes.date === date ? state.motes.caught : 0,
       },
       city: reward.cosmeticId
@@ -284,6 +298,8 @@ export interface MoteCatch {
   ok: true;
   lumen: number;
   remaining: number;
+  /** What the chain was worth, after clamping. 1 for an unchained catch. */
+  multiplier: number;
 }
 
 /**
@@ -292,20 +308,29 @@ export interface MoteCatch {
  * Worth a share of the city's daily output, so it stays meaningful at every
  * scale without ever rivalling a review — three motes come to roughly half a
  * day's city output, on a day that already paid a full one.
+ *
+ * `multiplier` is the chain the field has going (see MOTE_CHAIN_STEP). It is
+ * clamped here rather than trusted, so the ceiling is one the economy owns and
+ * not something a caller can talk its way past.
  */
 export function catchMote(
   store: Store,
   now: Date = new Date(),
+  multiplier = 1,
 ): MoteCatch | { ok: false } {
   const date = todayKey(now);
   const state = store.getState();
   if (state.motes.date !== date || state.motes.remaining <= 0) return { ok: false };
 
+  const chain = Math.min(MOTE_CHAIN_MAX, Math.max(1, multiplier));
   const mods = modsFor(state);
-  const lumen = Math.max(
+  // Chain multiplies the value after the floor, so a small city's motes still
+  // reward the chase rather than flatlining at the floor.
+  const base = Math.max(
     MOTE_FLOOR_LUMEN,
     Math.round(cityOutput(state.city.buildings, mods) * MOTE_SHARE_OF_OUTPUT),
   );
+  const lumen = Math.round(base * chain);
 
   store.update((current) => ({
     ...current,
@@ -323,12 +348,16 @@ export function catchMote(
   }));
 
   creditAchievements(store);
-  return { ok: true, lumen, remaining: state.motes.remaining - 1 };
+  return { ok: true, lumen, remaining: state.motes.remaining - 1, multiplier: chain };
 }
 
-/** Marks today as a deliberate day off. No-op if already marked. */
+/**
+ * Marks today as a deliberate day off. No-op if already marked, and on a
+ * weekend — those are off already, and there is no run to hold open.
+ */
 export function takeDayOff(store: Store, now: Date = new Date()): void {
   const date = todayKey(now);
+  if (isWeekend(date)) return;
   store.update((state) => {
     const day = findDay(state.history, date) ?? emptyDay(date);
     if (day.dayOff) return state;
@@ -381,10 +410,7 @@ export function buyBuilding(
   const wanted = count === 'max' ? undefined : Math.max(1, Math.floor(count));
   const levels = affordableLevels(def, level, state.currency.lumen, wanted, mods);
   if (levels <= 0) {
-    return {
-      ok: false,
-      reason: level >= BUILDING_MAX_LEVEL ? 'Already at max level.' : 'Not enough Lumen.',
-    };
+    return { ok: false, reason: refusalFor(level, state.city.charter) };
   }
 
   const spent = bulkCost(def, level, levels, mods);
@@ -404,6 +430,82 @@ export function buyBuilding(
 
   creditAchievements(store);
   return { ok: true, levels, spent, newLevel: level + levels };
+}
+
+/**
+ * Why a purchase was refused, in the words the shop will show.
+ *
+ * The charter case is the one worth spelling out: a player who has just been
+ * told "not enough Lumen" when the truth is "your city is not chartered that
+ * high" would go and earn Lumen that changes nothing.
+ */
+function refusalFor(level: number, charter: number): string {
+  if (level >= BUILDING_MAX_LEVEL) return 'Built as high as it goes.';
+  if (level >= buildingCeiling(charter)) {
+    return `The city charter caps every building at level ${buildingCeiling(charter)}. Raise the Hearth Hall.`;
+  }
+  return 'Not enough Lumen.';
+}
+
+export interface CharterResult {
+  ok: true;
+  level: number;
+  spent: number;
+  /** The ceiling every building may now be raised to. */
+  ceiling: number;
+}
+
+export type CharterOutcome = CharterResult | { ok: false; reason: string };
+
+/**
+ * Raises the city's charter — the Hearth Hall's one interaction.
+ *
+ * Two gates, and the order matters for the message the shop shows. Breadth
+ * first, because that is the one a player has to plan around; the Lumen price
+ * is a share of the city's own output and is rarely what is missing.
+ *
+ * Banks the vault first: a charter lifts the whole city's output the moment it
+ * lands, and accrual that happened at the old rate must not be paid at the new
+ * one.
+ */
+export function buyCharter(store: Store): CharterOutcome {
+  syncVault(store);
+  const state = store.getState();
+  const mods = modsFor(state);
+  const output = cityOutput(state.city.buildings, mods);
+  const progress = charterProgress(
+    state.city.buildings,
+    state.city.charter,
+    output,
+    state.currency.lumen,
+  );
+
+  if (progress.next === null || progress.requirement === null) {
+    return { ok: false, reason: 'The charter is as broad as it goes.' };
+  }
+  if (!progress.met) {
+    const { kinds, atLevel } = progress.requirement;
+    return {
+      ok: false,
+      reason: `Charter ${progress.next} needs ${kinds} kinds of building at level ${atLevel} — you have ${progress.standing}.`,
+    };
+  }
+  if (state.currency.lumen < progress.cost) {
+    return { ok: false, reason: 'Not enough Lumen.' };
+  }
+
+  const level = progress.next;
+  store.update((current) => ({
+    ...current,
+    currency: {
+      ...current.currency,
+      lumen: current.currency.lumen - progress.cost,
+    },
+    city: { ...current.city, charter: level },
+  }));
+
+  creditAchievements(store);
+  return { ok: true, level, spent: progress.cost, ceiling: buildingCeiling(level) };
 }
 
 export interface AscendResult {
@@ -463,16 +565,24 @@ export function ascend(store: Store, now: Date = new Date()): AscendOutcome {
       perks: current.ascension.perks,
     },
     vault: { ...current.vault, accruedThrough: now.getTime(), lumen: 0, carry: 0 },
-    city: {
-      ...current.city,
+    city: (() => {
       // Cosmetics are found, not bought back — they stay unlocked and equipped.
-      buildings: foothold
+      const buildings = foothold
         ? BUILDINGS.slice(0, foothold.count).map((def) => ({
             id: def.id,
             level: foothold.level,
           }))
-        : [],
-    },
+        : [];
+      return {
+        ...current.city,
+        buildings,
+        // The charter goes with the city that earned it. Keeping it would hand
+        // every later run a free ceiling and a free output multiplier, which is
+        // what perks are for — but it must still cover whatever a foothold
+        // rebuilt, or the run would open unable to touch its own buildings.
+        charter: Math.max(CHARTER_MIN_LEVEL, charterEarnedBy(buildings)),
+      };
+    })(),
   }));
 
   creditAchievements(store);

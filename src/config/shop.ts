@@ -9,10 +9,8 @@
  *
  * Buildings are listed cheapest first and form a geometric ladder: each tier
  * costs and pays roughly **13×** the one before it. Within a tier, every level
- * costs `BUILDING_COST_GROWTH` more than the last, so a building eventually
- * prices itself out and the next tier becomes the better buy — that hand-off
- * is what keeps the whole ladder in play instead of one building soaking up
- * every purchase.
+ * costs `BUILDING_COST_GROWTH` more than the last, and every tenth level
+ * doubles what it pays.
  *
  * `baseCost / incomePerLevel` is held near **2.5** across the ladder: a fresh
  * level pays for itself in about two and a half review days. Reinvesting each
@@ -20,6 +18,28 @@
  * twelfth tier (tens of trillions) around two months of daily use. Those two
  * numbers — the 13× spacing and the 2.5 payback — are the whole balance; keep
  * them roughly true and new tiers slot in without retuning anything else.
+ *
+ * Note what that 2.5 does *not* depend on: which tier it is. Payback is a
+ * function of **level**, near enough identically for all twenty tiers, so no
+ * building is ever dominated by another — only by its own height. That is why
+ * `BUILDING_MILESTONE_INTERVAL` is the number that matters most in this file's
+ * neighbourhood, and why it is ten rather than the six scattered thresholds it
+ * used to be: at the old spacing income grew ×64 across the range while cost
+ * grew a billionfold, so every building below the frontier was a trap.
+ *
+ * ## Why you would buy one tier over another
+ *
+ * Since Lumen payback barely distinguishes them, something else has to. Each
+ * tier carries a **specialty**: one thing it improves that no other tier on the
+ * home cluster touches — the Greenhouse pays Cinder, the Windmill fills the
+ * vault faster, the Foundry holds heat longer. Those advance every
+ * `SPECIALTY_INTERVAL` levels, so a building is worth raising for a reason that
+ * survives the arithmetic going flat.
+ *
+ * The ceiling on all of it is the charter (`domain/charter.ts`). Without it the
+ * ten-level doublings would make it optimal to pour everything into whichever
+ * building happened to be cheapest; the charter only lifts for a city that has
+ * gone wide, so the ladder gets climbed rather than exploited.
  *
  * Output is no longer paid in a lump at review time — it accrues into the
  * vault around the clock (`domain/vault.ts`). The `incomePerLevel` figures are
@@ -35,6 +55,61 @@
  * significant figures (see `domain/bignum.ts`).
  */
 import type { IslandId } from './islands';
+
+/**
+ * What a building improves besides its own Lumen.
+ *
+ * Every kind here lands on a field that already exists in `Mods` or
+ * `ResearchMods`, so a specialty reaches its system through the same seam a
+ * perk or a research node does — see `domain/specialties.ts`. Adding a new one
+ * means adding a case there, not a new path through the payouts.
+ */
+export type SpecialtyKind =
+  /** Flat extra Cinder on every full clear. */
+  | 'cinder-flat'
+  /** Multiplies Cinder earned. */
+  | 'cinder'
+  /** Multiplies how fast the vault fills. */
+  | 'vault-rate'
+  /** Multiplies the vault's ceiling. */
+  | 'vault-cap'
+  /** Extra minutes on every collection window. */
+  | 'window-minutes'
+  /** Raises the share a review-less day accrues at. */
+  | 'idle-share'
+  /** Multiplies the Lumen a review pays. */
+  | 'review'
+  /** Multiplies the city's whole output. */
+  | 'output'
+  /** Multiplies what a mote is worth. */
+  | 'mote'
+  /** Extra mote charges per review. Fractional steps round down. */
+  | 'mote-charges'
+  /** Added to the ordinary chest's cosmetic drop chance. */
+  | 'drop'
+  /** Extra days before heat stops building. */
+  | 'heat-cap'
+  /** Multiplies the Aether an ascension grants. */
+  | 'aether'
+  /** Scales building prices. Below 1 is a discount. */
+  | 'cost'
+  /** Added to the streak multiplier's cap. */
+  | 'streak-cap';
+
+/**
+ * A building's second job — the reason to level it that has nothing to do with
+ * how much Lumen it pays.
+ *
+ * One step is earned per `SPECIALTY_INTERVAL` levels, five in all. `perStep` is
+ * whatever one step is worth: a factor for the multiplying kinds, an addend for
+ * the rest. `label` names the thing improved in two or three words, for the
+ * shop card; the card computes the numbers itself.
+ */
+export interface SpecialtyDef {
+  kind: SpecialtyKind;
+  perStep: number;
+  label: string;
+}
 
 export interface BuildingDef {
   id: string;
@@ -53,6 +128,12 @@ export interface BuildingDef {
    * building's output multiplier. Small numbers — these compound.
    */
   synergy?: { from: string; perLevel: number };
+  /**
+   * What levelling this building improves besides its own output. No two tiers
+   * on the home cluster share one, which is what makes the ladder a set of
+   * choices rather than one curve drawn twelve times.
+   */
+  specialty: SpecialtyDef;
 }
 
 export type CosmeticSlot = 'lanterns' | 'skyline' | 'companion' | 'banner';
@@ -81,6 +162,7 @@ export const BUILDINGS: BuildingDef[] = [
     baseCost: 20,
     island: 'main',
     slot: 0,
+    specialty: { kind: 'cinder-flat', perStep: 1, label: 'Cinder per full clear' },
   },
   {
     id: 'windmill',
@@ -91,6 +173,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'west',
     slot: 0,
     synergy: { from: 'greenhouse', perLevel: 0.01 },
+    specialty: { kind: 'vault-rate', perStep: 1.1, label: 'vault fill rate' },
   },
   {
     id: 'market-stall',
@@ -101,6 +184,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'main',
     slot: 1,
     synergy: { from: 'greenhouse', perLevel: 0.01 },
+    specialty: { kind: 'review', perStep: 1.08, label: 'Lumen from reviews' },
   },
   {
     id: 'lighthouse',
@@ -110,6 +194,7 @@ export const BUILDINGS: BuildingDef[] = [
     baseCost: 45_000,
     island: 'east',
     slot: 0,
+    specialty: { kind: 'mote', perStep: 1.15, label: 'mote value' },
   },
   {
     id: 'observatory',
@@ -120,6 +205,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'east',
     slot: 1,
     synergy: { from: 'lighthouse', perLevel: 0.01 },
+    specialty: { kind: 'drop', perStep: 0.04, label: 'cosmetic drop chance' },
   },
   {
     id: 'foundry',
@@ -129,6 +215,7 @@ export const BUILDINGS: BuildingDef[] = [
     baseCost: 7_500_000,
     island: 'west',
     slot: 1,
+    specialty: { kind: 'heat-cap', perStep: 3, label: 'days before heat caps' },
   },
   {
     id: 'aviary',
@@ -139,6 +226,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'main',
     slot: 2,
     synergy: { from: 'greenhouse', perLevel: 0.02 },
+    specialty: { kind: 'mote-charges', perStep: 0.5, label: 'motes per review' },
   },
   {
     id: 'cloudloom',
@@ -149,6 +237,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'west',
     slot: 2,
     synergy: { from: 'windmill', perLevel: 0.02 },
+    specialty: { kind: 'vault-cap', perStep: 1.2, label: 'vault capacity' },
   },
   {
     id: 'skydock',
@@ -159,6 +248,11 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'east',
     slot: 2,
     synergy: { from: 'market-stall', perLevel: 0.02 },
+    specialty: {
+      kind: 'window-minutes',
+      perStep: 10,
+      label: 'minutes per collection window',
+    },
   },
   {
     id: 'aether-well',
@@ -168,6 +262,7 @@ export const BUILDINGS: BuildingDef[] = [
     baseCost: 220_000_000_000,
     island: 'main',
     slot: 3,
+    specialty: { kind: 'aether', perStep: 1.06, label: 'Aether per ascension' },
   },
   {
     id: 'starforge',
@@ -178,6 +273,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'west',
     slot: 3,
     synergy: { from: 'foundry', perLevel: 0.03 },
+    specialty: { kind: 'cost', perStep: 0.97, label: 'building prices' },
   },
   {
     id: 'anchor-spire',
@@ -188,6 +284,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'east',
     slot: 3,
     synergy: { from: 'aether-well', perLevel: 0.03 },
+    specialty: { kind: 'idle-share', perStep: 0.03, label: 'accrual on a quiet day' },
   },
 
   /* --- The high islands. Unlocked one band at a time by ascending. --- */
@@ -200,6 +297,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'cirrus',
     slot: 0,
     synergy: { from: 'anchor-spire', perLevel: 0.03 },
+    specialty: { kind: 'heat-cap', perStep: 4, label: 'days before heat caps' },
   },
   {
     id: 'frostworks',
@@ -210,6 +308,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'cirrus',
     slot: 1,
     synergy: { from: 'foundry', perLevel: 0.03 },
+    specialty: { kind: 'cinder', perStep: 1.15, label: 'Cinder earned' },
   },
   {
     id: 'heliostat',
@@ -220,6 +319,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'stratos',
     slot: 0,
     synergy: { from: 'observatory', perLevel: 0.03 },
+    specialty: { kind: 'output', perStep: 1.1, label: 'city output' },
   },
   {
     id: 'silent-vault',
@@ -230,6 +330,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'stratos',
     slot: 1,
     synergy: { from: 'skydock', perLevel: 0.03 },
+    specialty: { kind: 'vault-cap', perStep: 1.3, label: 'vault capacity' },
   },
   {
     id: 'aurora-font',
@@ -240,6 +341,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'aurora',
     slot: 0,
     synergy: { from: 'aether-well', perLevel: 0.04 },
+    specialty: { kind: 'mote', perStep: 1.25, label: 'mote value' },
   },
   {
     id: 'prism-hall',
@@ -250,6 +352,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'aurora',
     slot: 1,
     synergy: { from: 'cloudloom', perLevel: 0.04 },
+    specialty: { kind: 'drop', perStep: 0.05, label: 'cosmetic drop chance' },
   },
   {
     id: 'starwell',
@@ -260,6 +363,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'deepdark',
     slot: 0,
     synergy: { from: 'starforge', perLevel: 0.04 },
+    specialty: { kind: 'aether', perStep: 1.1, label: 'Aether per ascension' },
   },
   {
     id: 'void-anchor',
@@ -270,6 +374,7 @@ export const BUILDINGS: BuildingDef[] = [
     island: 'deepdark',
     slot: 1,
     synergy: { from: 'anchor-spire', perLevel: 0.04 },
+    specialty: { kind: 'streak-cap', perStep: 2, label: 'days of streak multiplier' },
   },
 ];
 

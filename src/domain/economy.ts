@@ -11,7 +11,7 @@ import { BUILDINGS, getBuilding, type BuildingDef } from '@/config/shop';
 import {
   BUILDING_COST_GROWTH,
   BUILDING_MAX_LEVEL,
-  BUILDING_MILESTONE_LEVELS,
+  BUILDING_MILESTONE_INTERVAL,
   BUILDING_MILESTONE_MULTIPLIER,
   BUILDING_REVEAL_FRACTION,
   DISTRICT_BONUS_PER_BUILDING,
@@ -61,10 +61,22 @@ export function bulkCost(
 }
 
 /**
- * How many levels `lumen` can buy, capped by `limit` and by
- * `BUILDING_MAX_LEVEL`. Solved directly from the series, then walked back one
- * step if rounding overshot — a "buy max" button that quotes a price you can't
- * afford is worse than one that leaves a Lumen on the table.
+ * How high this save may raise a building right now — the charter's ceiling,
+ * never above the hard cap.
+ *
+ * Read from `Mods` rather than passed around separately, because every caller
+ * that needs it already threads mods. `NO_MODS` leaves it at the hard cap, so
+ * pure economy tests and previews are unaffected by the charter.
+ */
+export function levelCeiling(mods: Mods = NO_MODS): number {
+  return Math.min(mods.levelCeiling, BUILDING_MAX_LEVEL);
+}
+
+/**
+ * How many levels `lumen` can buy, capped by `limit` and by the charter's
+ * ceiling. Solved directly from the series, then walked back one step if
+ * rounding overshot — a "buy max" button that quotes a price you can't afford
+ * is worse than one that leaves a Lumen on the table.
  */
 export function affordableLevels(
   def: BuildingDef,
@@ -73,7 +85,7 @@ export function affordableLevels(
   limit = BUILDING_MAX_LEVEL,
   mods: Mods = NO_MODS,
 ): number {
-  const headroom = Math.min(limit, BUILDING_MAX_LEVEL - currentLevel);
+  const headroom = Math.min(limit, levelCeiling(mods) - currentLevel);
   if (headroom <= 0 || lumen < buildingCost(def, currentLevel, mods)) return 0;
 
   const first = def.baseCost * BUILDING_COST_GROWTH ** currentLevel * mods.cost;
@@ -89,17 +101,20 @@ export function affordableLevels(
 /* Output                                                              */
 /* ------------------------------------------------------------------ */
 
+/** How many milestone levels a building has passed. */
+export function milestonesPassed(level: number): number {
+  return Math.floor(Math.min(level, BUILDING_MAX_LEVEL) / BUILDING_MILESTONE_INTERVAL);
+}
+
 /** Output multiplier a building has earned from the milestone levels it passed. */
 export function milestoneMultiplier(level: number): number {
-  const passed = BUILDING_MILESTONE_LEVELS.filter(
-    (threshold) => level >= threshold,
-  ).length;
-  return BUILDING_MILESTONE_MULTIPLIER ** passed;
+  return BUILDING_MILESTONE_MULTIPLIER ** milestonesPassed(level);
 }
 
 /** The next milestone level a building is working toward, or `null` past the last. */
 export function nextMilestone(level: number): number | null {
-  return BUILDING_MILESTONE_LEVELS.find((threshold) => level < threshold) ?? null;
+  const next = (milestonesPassed(level) + 1) * BUILDING_MILESTONE_INTERVAL;
+  return next <= BUILDING_MAX_LEVEL ? next : null;
 }
 
 /** Neighbour bonus from this building's synergy partner, as a multiplier. */
@@ -145,20 +160,93 @@ export function cityOutput(
 /* Presentation helpers                                                */
 /* ------------------------------------------------------------------ */
 
-/** What one more level would add to the city's daily output. */
+/**
+ * What buying `levels` more of this building would add to the city's daily
+ * output.
+ *
+ * Differenced against the whole city rather than the building alone, because
+ * the answer includes what those levels feed into the building's synergy
+ * partners and into the district bonus — which is often most of it, and is the
+ * whole reason to spread purchases around. Any milestone doubling crossed on
+ * the way is therefore priced in too, which is what makes a ×10 quote worth
+ * showing instead of ten times the ×1 figure.
+ */
 export function marginalOutput(
   def: BuildingDef,
   buildings: readonly OwnedBuilding[],
+  levels = 1,
   mods: Mods = NO_MODS,
 ): number {
-  const current = cityOutput(buildings, mods);
   const owned = buildings.find((entry) => entry.id === def.id);
+  const current = owned?.level ?? 0;
+  const bought = Math.min(levels, levelCeiling(mods) - current);
+  if (bought <= 0) return 0;
+
+  const before = cityOutput(buildings, mods);
   const next: OwnedBuilding[] = owned
     ? buildings.map((entry) =>
-        entry.id === def.id ? { ...entry, level: entry.level + 1 } : entry,
+        entry.id === def.id ? { ...entry, level: entry.level + bought } : entry,
       )
-    : [...buildings, { id: def.id, level: 1 }];
-  return cityOutput(next, mods) - current;
+    : [...buildings, { id: def.id, level: bought }];
+  return cityOutput(next, mods) - before;
+}
+
+/**
+ * Review days for a purchase to pay for itself.
+ *
+ * The shop leads with this rather than with the raw Lumen gain, because the
+ * gain alone cannot be compared across tiers — `+196` and `+22,000` say nothing
+ * about which is the better buy until you know what each cost. Payback is the
+ * one figure that ranks the whole board on the same scale, and it is very
+ * nearly a function of level alone: two buildings at the same level pay back in
+ * the same time whatever their tier.
+ *
+ * `Infinity` when a purchase adds nothing, which is what a building at its
+ * ceiling quotes; callers show a dash rather than a number.
+ */
+export function paybackDays(
+  def: BuildingDef,
+  buildings: readonly OwnedBuilding[],
+  levels = 1,
+  mods: Mods = NO_MODS,
+): number {
+  const owned = buildings.find((entry) => entry.id === def.id);
+  const current = owned?.level ?? 0;
+  const bought = Math.min(levels, levelCeiling(mods) - current);
+  if (bought <= 0) return Infinity;
+
+  const gain = marginalOutput(def, buildings, bought, mods);
+  if (gain <= 0) return Infinity;
+  return bulkCost(def, current, bought, mods) / gain;
+}
+
+/**
+ * The building the shop should mark as the best buy: the shortest payback among
+ * everything on screen that can actually be bought right now.
+ *
+ * One marker, never several — its job is to answer "what should I click" for a
+ * player who does not want to read twelve cards, not to rank the board.
+ */
+export function bestBuy(
+  shown: readonly BuildingDef[],
+  buildings: readonly OwnedBuilding[],
+  lumen: number,
+  levels = 1,
+  mods: Mods = NO_MODS,
+): BuildingDef | null {
+  let best: BuildingDef | null = null;
+  let bestDays = Infinity;
+
+  for (const def of shown) {
+    const current = ownedLevel(buildings, def.id);
+    if (affordableLevels(def, current, lumen, levels, mods) <= 0) continue;
+    const days = paybackDays(def, buildings, levels, mods);
+    if (days < bestDays) {
+      bestDays = days;
+      best = def;
+    }
+  }
+  return best;
 }
 
 /** Is a building's island reachable at this ascension count? */

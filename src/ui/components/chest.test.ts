@@ -24,8 +24,11 @@ const SCORE: ScoreResult = {
   points: 12,
   basePoints: 10,
   bonusPoints: 2,
+  availablePoints: 10,
+  fullClearPoints: 12,
   doneItemIds: [],
   skippedItemIds: [],
+  setAsideItemIds: [],
   countsForStreak: true,
 };
 

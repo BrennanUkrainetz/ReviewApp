@@ -4,7 +4,7 @@
  * Everything else is entered from here and returns here.
  */
 import { CHECKLIST_META, REVIEW_IDS } from '@/config/checklists';
-import { today } from '@/domain/dates';
+import { isWeekend, today } from '@/domain/dates';
 import { canAscend } from '@/domain/ascension';
 import { contractFor } from '@/domain/contracts';
 import { describeHeat, heatDays } from '@/domain/heat';
@@ -31,8 +31,8 @@ import { createCityScene } from '../scene/city-scene';
 export function createCityScreen(ctx: AppContext): Screen {
   const scene = createCityScene(ctx.store);
   const caption = createLightingCaption(ctx.store);
-  const motes = createMoteField(ctx.store, (lumen) =>
-    ctx.toast(moteCaughtMessage(lumen)),
+  const motes = createMoteField(ctx.store, (lumen, multiplier) =>
+    ctx.toast(moteCaughtMessage(lumen, multiplier)),
   );
   const vault = createVaultPanel(ctx.store, (lumen) =>
     ctx.toast(vaultCollectedMessage(lumen)),
@@ -130,23 +130,29 @@ export function createCityScreen(ctx: AppContext): Screen {
     const day = findDay(state.history, today());
     const completedToday = REVIEW_IDS.filter((id) => day?.[id]?.completed);
     const isDayOff = Boolean(day?.dayOff);
+    const weekend = isWeekend(today());
 
     replaceChildren(primaryActions, ...REVIEW_IDS.map((id) => reviewButton(id, day)));
 
+    // Nothing to hold open at the weekend, and a day off spent on a Saturday is
+    // one spent on nothing — so the button steps aside and says why.
     const dayOffButton = el(
       'button',
       {
         class: 'btn btn--secondary',
         attrs: {
           type: 'button',
-          disabled: isDayOff || completedToday.length > 0,
-          title:
-            completedToday.length > 0 ? 'You already logged a review today.' : undefined,
+          disabled: weekend || isDayOff || completedToday.length > 0,
+          title: weekend
+            ? 'Weekends are already off.'
+            : completedToday.length > 0
+              ? 'You already logged a review today.'
+              : undefined,
         },
         on: { click: () => void onDayOff() },
       },
       el('span', { class: 'review-card__icon', html: iconDayOff() }),
-      isDayOff ? 'Day off taken' : 'Take a day off',
+      weekend ? 'Weekend — off already' : isDayOff ? 'Day off taken' : 'Take a day off',
     );
 
     const navButton = (
@@ -185,6 +191,7 @@ export function createCityScreen(ctx: AppContext): Screen {
       completedToday,
       isDayOff,
       state.streak.current,
+      weekend,
     );
     renderDayBar(state, day);
   }
@@ -205,14 +212,30 @@ export function createCityScreen(ctx: AppContext): Screen {
 }
 
 /** Plain, factual status copy — no nudging, no guilt. */
-function describeToday(completed: ReviewId[], isDayOff: boolean, streak: number): string {
+function describeToday(
+  completed: ReviewId[],
+  isDayOff: boolean,
+  streak: number,
+  weekend: boolean,
+): string {
   if (isDayOff) return 'Today is a day off. Your streak is held.';
-  if (completed.length === 2) return 'Both reviews logged today. Nothing left to do.';
+  if (completed.length === 2) {
+    return weekend
+      ? 'Both reviews logged on a weekend. Pure bonus.'
+      : 'Both reviews logged today. Nothing left to do.';
+  }
   if (completed.length === 1) {
     const remaining = REVIEW_IDS.find((id) => !completed.includes(id));
     return `${CHECKLIST_META[completed[0]!].name} logged. ${
       remaining ? CHECKLIST_META[remaining].name : 'Nothing'
     } is still open.`;
+  }
+  // The weekend is off by design, so it is stated as a fact rather than as
+  // something outstanding.
+  if (weekend) {
+    return streak > 0
+      ? 'Weekend. Nothing is due — your streak is held until Monday.'
+      : 'Weekend. Nothing is due.';
   }
   return streak > 0
     ? 'Nothing logged today yet.'

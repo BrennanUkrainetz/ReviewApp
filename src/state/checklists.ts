@@ -37,7 +37,10 @@ export function nextItemId(label: string, taken: Iterable<string>): string {
 
 /**
  * Normalises a list of edited items. Drops anything unlabelled, clamps points
- * to a whole number in range, and gives duplicate or missing ids a fresh one.
+ * to a whole number in range, gives duplicate or missing ids a fresh one, and
+ * settles the one contradiction the two flags can express: an item cannot be
+ * both core and optional, and core wins. The Floor has to mean something on
+ * every day, so a step that some days don't call for can't be part of it.
  */
 export function sanitizeItems(items: readonly Partial<ChecklistItem>[]): ChecklistItem[] {
   const taken = new Set<string>();
@@ -56,12 +59,15 @@ export function sanitizeItems(items: readonly Partial<ChecklistItem>[]): Checkli
       : 1;
     const hint = (item.hint ?? '').trim();
 
+    const core = item.core === true;
+
     clean.push({
       id,
       label,
       points,
-      core: item.core === true,
+      core,
       ...(hint ? { hint } : {}),
+      ...(!core && item.optional === true ? { optional: true } : {}),
     });
   }
 

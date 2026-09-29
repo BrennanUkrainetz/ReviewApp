@@ -112,10 +112,58 @@ describe('review screen', () => {
 
     const summary = document.querySelector('.review-summary');
     expect(summary?.getAttribute('data-tier')).toBe('floor');
-    expect(document.querySelectorAll('.review-summary__skipped-item')).toHaveLength(
-      defaultItems('morning').filter((item) => !item.core).length,
+    // Skipped and set aside are listed apart; between them they name every
+    // non-core item.
+    expect(
+      document.querySelectorAll(
+        '.review-summary__skipped:not(.review-summary__set-aside) .review-summary__skipped-item',
+      ),
+    ).toHaveLength(
+      defaultItems('morning').filter((item) => !item.core && !item.optional).length,
     );
+    expect(
+      document.querySelectorAll(
+        '.review-summary__set-aside .review-summary__skipped-item',
+      ),
+    ).toHaveLength(defaultItems('morning').filter((item) => item.optional).length);
     expect(store.getState().streak.current).toBe(1);
+  });
+
+  it('still grades a full clear when the only skip was an optional item', async () => {
+    const { ctx, store } = setup();
+    mount(ctx);
+
+    const items = defaultItems('morning');
+    const optional = items.filter((item) => item.optional);
+    expect(optional.length).toBeGreaterThan(0);
+
+    for (const item of items) {
+      if (item.optional) await clickSkip();
+      else await clickDone();
+    }
+
+    const summary = document.querySelector('.review-summary');
+    expect(summary?.getAttribute('data-tier')).toBe('full');
+    // Named as set aside, and nowhere near the list of things that were missed.
+    expect(document.querySelector('.review-summary__set-aside')?.textContent).toContain(
+      optional[0]!.label,
+    );
+    expect(
+      document.querySelector('.review-summary__skipped:not(.review-summary__set-aside)'),
+    ).toBeNull();
+    expect(store.getState().streak.current).toBe(1);
+  });
+
+  it('calls the skip button something kinder on an optional item', () => {
+    const { ctx } = setup();
+    mount(ctx);
+
+    // The default morning routine opens on the optional lunch item.
+    expect(defaultItems('morning')[0]?.optional).toBe(true);
+    expect(document.querySelector('.review-card__skip')?.textContent).toContain(
+      "Doesn't apply today",
+    );
+    expect(document.querySelector('.review-card .badge--optional')).not.toBeNull();
   });
 
   it('hands the outcome to the chest when the summary is confirmed', async () => {

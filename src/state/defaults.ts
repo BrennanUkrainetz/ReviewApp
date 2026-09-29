@@ -1,9 +1,13 @@
 import { defaultChecklists } from '@/config/checklists';
-import { BIG_MILESTONE_INTERVAL, SMALL_MILESTONE_INTERVAL } from '@/config/tuning';
+import {
+  BIG_MILESTONE_INTERVAL,
+  CHARTER_MIN_LEVEL,
+  SMALL_MILESTONE_INTERVAL,
+} from '@/config/tuning';
 import type { AerieState } from './types';
 
 /** Bumped whenever the persisted shape changes; see `migrations.ts`. */
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 9;
 
 export function createInitialState(now: Date = new Date()): AerieState {
   return {
@@ -40,6 +44,7 @@ export function createInitialState(now: Date = new Date()): AerieState {
     },
     city: {
       buildings: [],
+      charter: CHARTER_MIN_LEVEL,
       cosmetics: { unlocked: [], equipped: [] },
     },
     settings: {

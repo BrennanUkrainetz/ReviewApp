@@ -4,10 +4,10 @@
  * The slowness is the point — a wall of checkboxes is easy to skim past and
  * hard to start. One item on screen makes starting cheap and finishing likely.
  */
-import { maxPoints } from '@/config/checklists';
 import { completeReview, type ReviewOutcome } from '@/state/actions';
 import { checklistFor } from '@/state/checklists';
 import type { ChecklistItem, ReviewId } from '@/state/types';
+import { isWeekend, today } from '@/domain/dates';
 import { tierLabel } from '@/domain/scoring';
 import { confirmDialog } from '../components/confirm';
 import type { AppContext, Screen } from '../context';
@@ -78,7 +78,9 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
           class: [
             'review__pip',
             position < index && done.has(item.id) && 'review__pip--done',
-            position < index && !done.has(item.id) && 'review__pip--skipped',
+            position < index &&
+              !done.has(item.id) &&
+              (item.optional ? 'review__pip--set-aside' : 'review__pip--skipped'),
             position === index && !finished && 'review__pip--current',
           ],
           attrs: { 'aria-hidden': 'true' },
@@ -125,6 +127,9 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
       'Done',
     );
 
+    // An optional item is being *set aside*, not failed, and the button says
+    // so — the word "skip" is what makes a step that doesn't apply feel like a
+    // miss.
     const skipButton = el(
       'button',
       {
@@ -133,7 +138,7 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
         on: { click: () => void advance(item, false) },
       },
       el('span', { class: 'review-card__icon', html: iconSkip() }),
-      'Skip',
+      item.optional ? "Doesn't apply today" : 'Skip',
     );
 
     const card = el(
@@ -143,12 +148,19 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
         'div',
         { class: 'review-card__meta' },
         item.core && el('span', { class: 'badge badge--floor' }, 'Core'),
+        item.optional && el('span', { class: 'badge badge--optional' }, 'Optional'),
         el('span', { class: 'review-card__points num' }, `${item.points} pt`),
       ),
       el('h3', { class: 'review-card__label' }, item.label),
       item.hint ? el('p', { class: 'review-card__hint' }, item.hint) : null,
       el('div', { class: 'review-card__actions' }, doneButton, skipButton),
-      el('p', { class: 'review-card__keys' }, 'Enter marks it done · S skips'),
+      el(
+        'p',
+        { class: 'review-card__keys' },
+        item.optional
+          ? 'Enter marks it done · S sets it aside, at no cost'
+          : 'Enter marks it done · S skips',
+      ),
     );
 
     replaceChildren(body, card);
@@ -176,16 +188,23 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
 
   function buildSummary(outcome: ReviewOutcome): HTMLElement {
     const { score } = outcome;
-    const total = maxPoints(checklist);
+    // The run's own ceiling, not the checklist's: anything set aside left the
+    // denominator with its points, so a clear still reads as N of N.
+    const total = score.availablePoints;
     const skipped = checklist.items.filter((item) =>
       score.skippedItemIds.includes(item.id),
+    );
+    const setAside = checklist.items.filter((item) =>
+      score.setAsideItemIds.includes(item.id),
     );
 
     const streakLine = outcome.advancedStreak
       ? `Streak now ${outcome.streakAfter} ${outcome.streakAfter === 1 ? 'day' : 'days'}.`
-      : score.countsForStreak
-        ? `Today was already counted — streak stays at ${outcome.streakAfter}.`
-        : `A core item was skipped, so this one doesn't count toward the streak. The Lumen is yours either way.`;
+      : !score.countsForStreak
+        ? `A core item was skipped, so this one doesn't count toward the streak. The Lumen is yours either way.`
+        : isWeekend(today())
+          ? `Weekends don't count toward the streak — this one is pure bonus. Still at ${outcome.streakAfter}.`
+          : `Today was already counted — streak stays at ${outcome.streakAfter}.`;
 
     return el(
       'article',
@@ -217,6 +236,25 @@ export function createReviewScreen(ctx: AppContext, reviewId: ReviewId): Screen 
               ...skipped.map((item) =>
                 el('li', { class: 'review-summary__skipped-item' }, item.label),
               ),
+            ),
+          )
+        : null,
+      setAside.length > 0
+        ? el(
+            'div',
+            { class: 'review-summary__skipped review-summary__set-aside' },
+            el('p', { class: 'section-label' }, "Didn't apply today"),
+            el(
+              'ul',
+              {},
+              ...setAside.map((item) =>
+                el('li', { class: 'review-summary__skipped-item' }, item.label),
+              ),
+            ),
+            el(
+              'p',
+              { class: 'review-summary__set-aside-note' },
+              `Set aside, not missed — ${plural(setAside.length, 'item')} left the day's total instead of counting against it.`,
             ),
           )
         : null,

@@ -10,10 +10,10 @@ import { createInitialState } from '@/state/defaults';
 import type { AerieState, DayRecord, Tier } from '@/state/types';
 import { achievementMultiplier, newlyEarned } from './achievements';
 import { contractBonus, contractFor, contractJustSettled } from './contracts';
-import { addDays } from './dates';
+import { addDays, addWeekdays } from './dates';
 import { describeHeat, heatDays, heatMultiplier } from './heat';
 
-const TODAY = '2026-07-21';
+const TODAY = '2026-07-21'; // a Tuesday
 
 function day(date: string, morning: Tier | null, daily: Tier | null = null): DayRecord {
   const record = (tier: Tier | null) =>
@@ -23,10 +23,10 @@ function day(date: string, morning: Tier | null, daily: Tier | null = null): Day
   return { date, morning: record(morning), daily: record(daily), dayOff: false };
 }
 
-/** `n` consecutive full-clear days ending today. */
+/** `n` consecutive full-clear weekdays ending today. */
 function fullClearRun(days: number): DayRecord[] {
   return Array.from({ length: days }, (_, i) =>
-    day(addDays(TODAY, -(days - 1 - i)), 'full'),
+    day(addWeekdays(TODAY, -(days - 1 - i)), 'full'),
   );
 }
 
@@ -42,8 +42,14 @@ describe('heat', () => {
   });
 
   it('does not build on a floor pass — showing up is the streak, not heat', () => {
-    const history = [day(addDays(TODAY, -1), 'full'), day(TODAY, 'floor')];
+    const history = [day(addWeekdays(TODAY, -1), 'full'), day(TODAY, 'floor')];
     expect(heatDays(history, TODAY)).toBe(0);
+  });
+
+  it('holds over a weekend rather than cooling', () => {
+    // Full clears Thursday and Friday, read on the Monday morning after.
+    const history = [day('2026-07-16', 'full'), day('2026-07-17', 'full')];
+    expect(heatDays(history, '2026-07-20')).toBe(2);
   });
 
   it('caps rather than growing without limit', () => {
@@ -151,10 +157,10 @@ describe('achievements', () => {
   });
 
   it('keeps a heat badge after the run it was earned on has cooled', () => {
-    // Ten full-clear days, then two cold ones. The live heat is 0.
+    // Ten full-clear weekdays, then two cold ones. The live heat is 0.
     const history = [
-      ...Array.from({ length: 10 }, (_, i) => day(addDays(TODAY, i - 11), 'full')),
-      day(addDays(TODAY, -1), 'floor'),
+      ...Array.from({ length: 10 }, (_, i) => day(addWeekdays(TODAY, i - 11), 'full')),
+      day(addWeekdays(TODAY, -1), 'floor'),
       day(TODAY, 'floor'),
     ];
     const earned = newlyEarned(withState({ history }));
@@ -165,17 +171,17 @@ describe('achievements', () => {
 
   it('does not let a gap in history pass for a run', () => {
     const history = [
-      ...Array.from({ length: 5 }, (_, i) => day(addDays(TODAY, i - 12), 'full')),
+      ...Array.from({ length: 5 }, (_, i) => day(addWeekdays(TODAY, i - 12), 'full')),
       // A missed week, then five more.
-      ...Array.from({ length: 5 }, (_, i) => day(addDays(TODAY, i - 4), 'full')),
+      ...Array.from({ length: 5 }, (_, i) => day(addWeekdays(TODAY, i - 4), 'full')),
     ];
     expect(newlyEarned(withState({ history }))).not.toContain('heat-10');
   });
 
   it('treats a day off as neutral rather than as a break', () => {
     const history = [
-      ...Array.from({ length: 5 }, (_, i) => day(addDays(TODAY, i - 6), 'full')),
-      { ...day(addDays(TODAY, -1), null), dayOff: true },
+      ...Array.from({ length: 5 }, (_, i) => day(addWeekdays(TODAY, i - 6), 'full')),
+      { ...day(addWeekdays(TODAY, -1), null), dayOff: true },
       day(TODAY, 'full'),
     ];
     // Six full clears either side of a deliberate rest day.
@@ -183,20 +189,37 @@ describe('achievements', () => {
     expect(newlyEarned(withState({ history }))).not.toContain('comeback');
   });
 
+  it('treats the weekend as neutral too, rather than as two missed days', () => {
+    // Thursday and Friday, then Monday and Tuesday: one unbroken run of four,
+    // with nothing to come back from.
+    const history = [
+      day('2026-07-16', 'full'),
+      day('2026-07-17', 'full'),
+      day('2026-07-20', 'full'),
+      day(TODAY, 'full'),
+    ];
+    const earned = newlyEarned(withState({ history }));
+    expect(earned).not.toContain('comeback');
+    expect(heatDays(history, TODAY)).toBe(4);
+  });
+
   it('earns the comeback badge only for a genuinely missed day', () => {
-    const unbroken = [day(addDays(TODAY, -1), 'floor'), day(TODAY, 'floor')];
+    const unbroken = [day(addWeekdays(TODAY, -1), 'floor'), day(TODAY, 'floor')];
     expect(newlyEarned(withState({ history: unbroken }))).not.toContain('comeback');
 
-    const broken = [day(addDays(TODAY, -3), 'floor'), day(TODAY, 'floor')];
+    const broken = [day(addWeekdays(TODAY, -3), 'floor'), day(TODAY, 'floor')];
     expect(newlyEarned(withState({ history: broken }))).toContain('comeback');
   });
 
-  it('earns the weekday sweep once every day of the week is covered', () => {
-    const six = Array.from({ length: 6 }, (_, i) => day(addDays(TODAY, -i), 'floor'));
-    expect(newlyEarned(withState({ history: six }))).not.toContain('every-weekday');
+  it('earns the weekday sweep once every weekday is covered', () => {
+    const four = Array.from({ length: 4 }, (_, i) =>
+      day(addWeekdays(TODAY, -i), 'floor'),
+    );
+    expect(newlyEarned(withState({ history: four }))).not.toContain('every-weekday');
 
-    const seven = [...six, day(addDays(TODAY, -6), 'floor')];
-    expect(newlyEarned(withState({ history: seven }))).toContain('every-weekday');
+    // The fifth distinct weekday completes Monday through Friday.
+    const five = [...four, day(addWeekdays(TODAY, -4), 'floor')];
+    expect(newlyEarned(withState({ history: five }))).toContain('every-weekday');
   });
 
   it('notices a routine that has been rewritten', () => {

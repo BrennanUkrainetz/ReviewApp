@@ -20,6 +20,14 @@ export interface ChecklistItem {
   hint?: string;
   points: number;
   core: boolean;
+  /**
+   * Marks a step that doesn't apply every day — taking lunch to the fridge is
+   * nothing to do on a day worked from home. Skipping one *sets it aside*
+   * rather than missing it: it leaves the day's ceiling along with its score,
+   * so the review can still be a full clear without it. Never core; the Floor
+   * is exactly the set of things that always apply.
+   */
+  optional?: boolean;
 }
 
 /**
@@ -106,6 +114,13 @@ export interface OwnedBuilding {
 
 export interface CityState {
   buildings: OwnedBuilding[];
+  /**
+   * The Hearth Hall's charter level — the ceiling on every building's level,
+   * and the only thing Lumen alone cannot buy. See `domain/charter.ts`.
+   *
+   * Always at least 1: the Hearth Hall stands from the first day.
+   */
+  charter: number;
   cosmetics: {
     unlocked: string[];
     equipped: string[];

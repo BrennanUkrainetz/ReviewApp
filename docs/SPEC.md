@@ -180,6 +180,7 @@ Store as a single JSON object in `localStorage` under key `aerie-state`.
   },
   "city": {
     "buildings": [{ "id": "greenhouse", "level": 2 }],
+    "charter": 1,
     "cosmetics": {
       "unlocked": ["teal-lanterns"],
       "equipped": ["teal-lanterns"]
@@ -197,8 +198,17 @@ through it. Never touch `localStorage` directly elsewhere.
 
 Date handling: use the local calendar day (YYYY-MM-DD) to determine
 streak continuity — a review completed any time on a calendar day counts
-for that day; missing a full calendar day (no completion, no day-off)
+for that day; missing a full **weekday** (no completion, no day-off)
 breaks the streak back to 0 the next time the app is opened.
+
+The routine runs Monday to Friday. Saturday and Sunday cannot be missed:
+a Friday review carries the run straight into Monday, and heat, the
+full-clear streak and the run-based achievements all count weekdays the
+same way. A review logged on a weekend is welcome and pays as normal, but
+it is a bonus — it advances neither the streak nor heat. "Day off" is a
+weekday-only action for the same reason. See `domain/dates.ts`
+(`isWeekend`, `missedWeekdays`, `addWeekdays`), which every other module
+reads the rule from.
 
 ---
 
@@ -262,10 +272,23 @@ Daily Review (4 items, target ~8 pts):
   things — main streak = did-something-count-toward-a-day; full-clear
   streak = a secondary bragging-rights stat, non-blocking).
 
+> **Amended:** items can be marked **optional** in Settings, for steps that only
+> apply on some days. Skipping one sets it aside rather than missing it — its
+> points leave the day's ceiling as well as its score, so "every item done"
+> means every item that applied today, and a full clear is still a full clear
+> without it. Optional and core are mutually exclusive. See "Optional items are
+> set aside, not skipped" in `DECISIONS.md`.
+
 Points convert directly to Lumen (1:1 by default, tune-able constant),
 **multiplied by a streak bonus**: e.g. `multiplier = 1 + min(streak, 20) * 0.02`
 (so streak 20 = 1.4x). Keep this in one named constant/function so it's
 easy to tune later.
+
+> **Amended** (alongside §13, below): the flat per-point rate is now the *floor*
+> rather than the whole story. A review pays the greater of that rate and a
+> share of the city's daily output, pro-rated by points. A fixed rate cannot
+> stay a reward beside an exponential city — see "The review payout is a share
+> of the city" in `DECISIONS.md`. The streak multiplier is unchanged.
 
 ---
 
@@ -308,6 +331,38 @@ bigger burst — without requiring new mechanics.
   state if unaffordable. Keep transactions instant (click to buy/equip),
   no confirmation dialogs except for anything irreversible (there
   shouldn't be anything irreversible here).
+
+### 9a. What makes one building worth buying over another — *amended*
+
+The original brief above treats buildings as interchangeable trickles. In
+practice they are not, and the amendment is worth stating because it drives
+three numbers in `config/tuning.ts`.
+
+A building's cost grows `1.11 ^ level` while its income grows linearly, so
+**payback is a function of level, not of tier** — every building at level 50
+pays for itself in the same number of review days whatever it is. That is fine
+in itself, but it means the ladder needs two things the brief did not call for:
+
+1. **Doublings dense enough that levelling stays worthwhile.** Output doubles
+   every `BUILDING_MILESTONE_INTERVAL` (10) levels, forever. At the six
+   scattered thresholds this shipped with, a level-66 building took three
+   hundred review days to pay for itself and every tier below the frontier was
+   a trap.
+2. **A reason to prefer one tier over another once payback stops telling them
+   apart.** Each building carries a **specialty** — one thing it improves that
+   no other tier on the home cluster touches, advancing every
+   `SPECIALTY_INTERVAL` (40) levels. The Greenhouse pays Cinder, the Windmill
+   fills the vault faster, the Foundry holds heat longer.
+3. **A ceiling, so "level the cheapest thing forever" is not the answer.** The
+   Hearth Hall — always drawn at the centre of the home island, never buyable
+   until now — holds the city's **charter**, and a charter is the highest level
+   any building may reach. It lifts for *breadth*, not money: charter `L` wants
+   one more kind of building than the last, standing at the height the last
+   charter allowed. See `domain/charter.ts`.
+
+The loop that falls out: level everything to the ceiling, widen the city, raise
+the charter, repeat. The charter resets with the city on ascension; specialties
+go with the buildings that earned them.
 
 ---
 

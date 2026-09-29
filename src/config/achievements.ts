@@ -23,7 +23,13 @@ import {
   HEAT_CAP_DAYS,
   MOTE_CHARGES_PER_REVIEW,
 } from '@/config/tuning';
-import { addDays, daysBetween, fromDateKey } from '@/domain/dates';
+import {
+  addDays,
+  daysBetween,
+  fromDateKey,
+  isWeekend,
+  missedWeekdays,
+} from '@/domain/dates';
 import type { AerieState, DayRecord, ReviewRecord } from '@/state/types';
 
 export type AchievementGroup = 'routine' | 'city' | 'fortune' | 'wealth' | 'ascension';
@@ -31,7 +37,7 @@ export type AchievementGroup = 'routine' | 'city' | 'fortune' | 'wealth' | 'asce
 export interface AchievementDef {
   id: string;
   name: string;
-  /** What earned it, in the past tense. Shown once unlocked. */
+  /** What earns it, in the past tense. Shown whether or not it's earned. */
   detail: string;
   group: AchievementGroup;
   /** True once the save qualifies. Never un-earns — see the note above. */
@@ -71,25 +77,29 @@ const fullClearsLogged = (state: AerieState): number =>
   state.history.reduce((count, day) => count + fullClearsOn(day), 0);
 
 /**
- * The longest run of consecutive calendar days matching `qualifies`, anywhere
- * in history.
+ * The longest run of consecutive weekdays matching `qualifies`, anywhere in
+ * history.
  *
  * Deliberately *historical* rather than current: an achievement asks what you
  * once did, so a twenty-day heat run stays earned after it cools. Days off are
  * neutral, exactly as they are for the live heat streak — they hold the run
- * open without extending it.
+ * open without extending it. Weekends are neutral too, and skipped outright:
+ * Friday to Monday is contiguous, and a Saturday with nothing on it is not a
+ * break in anything.
  */
 function longestRun(
   history: DayRecord[],
   qualifies: (day: DayRecord) => boolean,
 ): number {
-  const days = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  const days = [...history]
+    .filter((day) => !isWeekend(day.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
   let best = 0;
   let run = 0;
   let previous: string | null = null;
 
   for (const day of days) {
-    const contiguous = previous !== null && daysBetween(previous, day.date) === 1;
+    const contiguous = previous !== null && missedWeekdays(previous, day.date) === 0;
     if (!contiguous) run = 0;
     if (qualifies(day)) {
       run += 1;
@@ -103,17 +113,18 @@ function longestRun(
   return best;
 }
 
-/** Distinct weekdays (0–6) on which anything has ever been logged. */
+/** Distinct weekdays (Monday–Friday) on which anything has ever been logged. */
 const weekdaysCovered = (state: AerieState): number =>
   new Set(
     state.history
-      .filter((day) => done(day).length > 0)
+      .filter((day) => done(day).length > 0 && !isWeekend(day.date))
       .map((day) => fromDateKey(day.date).getDay()),
   ).size;
 
 /**
  * True once a run has been broken and picked back up: two logged days with a
- * genuinely empty day between them — no review, no day off.
+ * genuinely empty *weekday* between them — no review, no day off. A weekend in
+ * the gap is not a miss, so a Friday-then-Monday pair is unbroken.
  */
 function hasComeback(history: DayRecord[]): boolean {
   const active = new Set(
@@ -129,7 +140,7 @@ function hasComeback(history: DayRecord[]): boolean {
     const current = logged[i]!;
     if (daysBetween(previous, current) > 30) return true; // long gap; don't walk it
     for (let cursor = addDays(previous, 1); cursor < current; cursor = addDays(cursor, 1)) {
-      if (!active.has(cursor)) return true;
+      if (!isWeekend(cursor) && !active.has(cursor)) return true;
     }
   }
   return false;
@@ -206,12 +217,14 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     group: 'routine',
     earnedBy: streakAt(3),
   },
+  // Ids are what a save stores, so they stay put even where the number behind
+  // them has moved to match the working week. A week is five days now.
   {
     id: 'streak-7',
     name: 'A Full Week',
-    detail: 'Held a seven-day streak.',
+    detail: 'Held a five-day streak — Monday through Friday.',
     group: 'routine',
-    earnedBy: streakAt(7),
+    earnedBy: streakAt(5),
   },
   {
     id: 'streak-20',
@@ -244,9 +257,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'streak-365',
     name: 'All the Way Round',
-    detail: 'Held the streak for a full year.',
+    detail: 'Held the streak for a full year — two hundred and sixty weekdays.',
     group: 'routine',
-    earnedBy: streakAt(365),
+    earnedBy: streakAt(260),
   },
   {
     id: 'both-in-a-day',
@@ -269,9 +282,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'perfect-week',
     name: 'A Perfect Week',
-    detail: 'Full-cleared both reviews, seven days running.',
+    detail: 'Full-cleared both reviews, every weekday of a week.',
     group: 'routine',
-    earnedBy: (state) => longestRun(state.history, (day) => fullClearsOn(day) === 2) >= 7,
+    earnedBy: (state) => longestRun(state.history, (day) => fullClearsOn(day) === 2) >= 5,
   },
   {
     id: 'took-a-day-off',
@@ -297,9 +310,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'every-weekday',
     name: 'Every Day of the Week',
-    detail: 'Logged a review on all seven weekdays.',
+    detail: 'Logged a review on every weekday, Monday through Friday.',
     group: 'routine',
-    earnedBy: (state) => weekdaysCovered(state) >= 7,
+    earnedBy: (state) => weekdaysCovered(state) >= 5,
   },
   {
     id: 'reviews-10',

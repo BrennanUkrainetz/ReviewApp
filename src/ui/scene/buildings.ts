@@ -9,7 +9,8 @@
  * milestone levels — falls out of the level.
  *
  * The Hearth Hall stays hand-drawn. It is the one building that is always
- * there, is never bought, and never levels, so a spec would only obscure it.
+ * there and is never bought a tier at a time, so a spec would only obscure it —
+ * but it does now grow, with the city's charter rather than with a level.
  */
 import { svg } from '../dom';
 import {
@@ -26,26 +27,53 @@ import {
 /* The permanent heart of the city — present from the very first day.  */
 /* ------------------------------------------------------------------ */
 
-export function hearthHall(): SVGGElement {
-  return group(
+/**
+ * The heart of the city, drawn at its charter.
+ *
+ * The charter is the city's permission to build higher (`domain/charter.ts`),
+ * so the hall that holds it has to visibly hold more as it rises — otherwise
+ * the one purchase that governs everything else is the only one you cannot see.
+ * It grows the way a civic building would: the hall broadens a little, the
+ * tower gains a stage per charter, and the beacon climbs with it.
+ *
+ * Deliberately modest per step. At charter 8 it should still read as the oldest
+ * roof on the island rather than as another tier of the ladder.
+ */
+export function hearthHall(charter = 1): SVGGElement {
+  const steps = Math.max(0, Math.floor(charter) - 1);
+  const spread = 1 + steps * 0.05;
+  const half = 46 * spread;
+  const eaves = 38 * spread;
+  const wall = -34 - steps * 2;
+  const ridge = wall - 28 * spread;
+  const tower = 46 + steps * 9;
+  const towerTop = wall - tower;
+
+  const node = group(
     'scene-building scene-building--hearth',
-    shape('M-46 0 L-38 -34 L38 -34 L46 0 Z', 'lit'),
-    shape('M38 -34 L46 0 L26 0 L22 -34 Z', 'shade'),
-    shape('M-44 -34 L0 -62 L44 -34 Z', 'roof'),
-    rim('M-44 -34 L0 -62'),
-    window_(-30, -26, 11, 14, 2),
-    window_(-10, -26, 11, 14, 2),
-    window_(10, -26, 11, 14, 2),
-    box(28, -78, 9, 46, 'shade', 2),
+    shape(`M${-half} 0 L${-eaves} ${wall} L${eaves} ${wall} L${half} 0 Z`, 'lit'),
+    shape(`M${eaves} ${wall} L${half} 0 L${half * 0.57} 0 L${eaves * 0.58} ${wall} Z`, 'shade'),
+    shape(`M${-half + 2} ${wall} L0 ${ridge} L${half - 2} ${wall} Z`, 'roof'),
+    rim(`M${-half + 2} ${wall} L0 ${ridge}`),
+    window_(-30, wall + 8, 11, 14, 2),
+    window_(-10, wall + 8, 11, 14, 2),
+    window_(10, wall + 8, 11, 14, 2),
+    box(28, towerTop, 9, tower, 'shade', 2),
     svg('circle', {
       cx: 32.5,
-      cy: -82,
+      cy: towerTop - 4,
       r: 6,
       fill: 'var(--scene-window)',
       opacity: 'var(--scene-window-opacity)',
       class: 'scene__beacon',
     }),
   );
+
+  // One lit stage per charter earned, climbing the tower.
+  for (let i = 0; i < steps; i += 1) {
+    node.appendChild(window_(29.5, towerTop + 14 + i * 16, 6, 9, 1.5));
+  }
+  return node;
 }
 
 /* ------------------------------------------------------------------ */

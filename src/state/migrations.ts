@@ -9,6 +9,8 @@ import { defaultItems, REVIEW_IDS } from '@/config/checklists';
 import { getAchievement } from '@/config/achievements';
 import { getPerk } from '@/config/perks';
 import { getResearch } from '@/config/research';
+import { CHARTER_MIN_LEVEL } from '@/config/tuning';
+import { charterEarnedBy, clampCharter } from '@/domain/charter';
 import { isDateKey } from '@/domain/dates';
 import { sanitizeItems } from './checklists';
 import { createInitialState, STATE_VERSION } from './defaults';
@@ -69,6 +71,9 @@ function coerceChecklist(value: unknown, id: ReviewId): ChecklistItem[] {
           label: str(entry['label']) ?? '',
           points: num(entry['points'], 1),
           core: bool(entry['core'], false),
+          // Absent before v9. A save that never knew about optional items has
+          // none, which is exactly how they scored before.
+          optional: bool(entry['optional'], false),
           ...(hint ? { hint } : {}),
         },
       ];
@@ -123,6 +128,14 @@ export function migrate(raw: unknown): AerieState {
       0,
     ),
   );
+
+  const buildings = Array.isArray(city['buildings'])
+    ? city['buildings'].flatMap((entry) => {
+        if (!isObject(entry)) return [];
+        const id = str(entry['id']);
+        return id ? [{ id, level: Math.max(1, num(entry['level'], 1)) }] : [];
+      })
+    : [];
 
   const ascension = isObject(raw['ascension']) ? raw['ascension'] : {};
   const motes = isObject(raw['motes']) ? raw['motes'] : {};
@@ -205,13 +218,15 @@ export function migrate(raw: unknown): AerieState {
       lifetimeCollected: Math.max(0, num(vault['lifetimeCollected'], 0)),
     },
     city: {
-      buildings: Array.isArray(city['buildings'])
-        ? city['buildings'].flatMap((entry) => {
-            if (!isObject(entry)) return [];
-            const id = str(entry['id']);
-            return id ? [{ id, level: Math.max(1, num(entry['level'], 1)) }] : [];
-          })
-        : [],
+      buildings,
+      // The charter arrived in v8, and it caps every building's level — so a
+      // save from before it must be granted the charter its city had already
+      // earned. Anything less would freeze a city that was legal yesterday
+      // behind a rule it never had the chance to satisfy.
+      charter: Math.max(
+        clampCharter(num(city['charter'], CHARTER_MIN_LEVEL)),
+        charterEarnedBy(buildings),
+      ),
       cosmetics: {
         unlocked: strList(cosmetics['unlocked']),
         equipped: strList(cosmetics['equipped']),

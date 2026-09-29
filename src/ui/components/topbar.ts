@@ -32,7 +32,7 @@ export function createTopbar(store: Store): TopbarHandle {
     'div',
     {
       class: 'stat stat--streak',
-      attrs: { title: 'Consecutive days with a review or a day off' },
+      attrs: { title: 'Consecutive weekdays with a review or a day off' },
     },
     el('span', { class: 'stat__icon', html: iconStreak() }),
     streakValue,
@@ -111,7 +111,7 @@ export function createTopbar(store: Store): TopbarHandle {
         ? `Consecutive days with a review or a day off · ${fullClears} full-clear ${
             fullClears === 1 ? 'day' : 'days'
           } running`
-        : 'Consecutive days with a review or a day off';
+        : 'Consecutive weekdays with a review or a day off';
 
     if (lastStreak !== null && streak !== lastStreak) bump(streakValue);
     if (lastLumen !== null && lumen !== lastLumen) bump(lumenValue);

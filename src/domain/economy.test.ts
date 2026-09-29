@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDINGS, getBuilding } from '@/config/shop';
-import { BUILDING_MAX_LEVEL, BUILDING_MILESTONE_LEVELS } from '@/config/tuning';
+import { BUILDING_MAX_LEVEL, BUILDING_MILESTONE_INTERVAL } from '@/config/tuning';
 import type { OwnedBuilding } from '@/state/types';
 import {
   affordableLevels,
+  bestBuy,
   buildingCost,
   bulkCost,
   cityOutput,
@@ -13,6 +14,7 @@ import {
   milestoneMultiplier,
   nextLockedBuilding,
   nextMilestone,
+  paybackDays,
   revealedBuildings,
   synergyMultiplier,
 } from './economy';
@@ -102,17 +104,56 @@ describe('affordableLevels', () => {
 });
 
 describe('milestoneMultiplier', () => {
-  it('doubles at each threshold and holds between them', () => {
+  it('doubles at every interval and holds between them', () => {
     expect(milestoneMultiplier(0)).toBe(1);
     expect(milestoneMultiplier(9)).toBe(1);
     expect(milestoneMultiplier(10)).toBe(2);
-    expect(milestoneMultiplier(24)).toBe(2);
-    expect(milestoneMultiplier(25)).toBe(4);
+    expect(milestoneMultiplier(19)).toBe(2);
+    expect(milestoneMultiplier(20)).toBe(4);
+    expect(milestoneMultiplier(100)).toBe(2 ** 10);
   });
 
   it('points at the next threshold until there are none left', () => {
-    expect(nextMilestone(0)).toBe(BUILDING_MILESTONE_LEVELS[0]);
+    expect(nextMilestone(0)).toBe(BUILDING_MILESTONE_INTERVAL);
     expect(nextMilestone(BUILDING_MAX_LEVEL)).toBeNull();
+  });
+
+  // The whole point of the interval. At the old six scattered thresholds a
+  // level-66 building took three hundred review days to pay for itself, which
+  // made every tier below the frontier a trap rather than a choice.
+  it('keeps a deeply levelled building inside a sane payback', () => {
+    const deep: OwnedBuilding[] = [{ id: 'greenhouse', level: 66 }];
+    expect(paybackDays(greenhouse, deep)).toBeLessThan(60);
+  });
+});
+
+describe('payback', () => {
+  // Payback is a function of level, near enough identically for every tier —
+  // this is what stops any building being dominated by another, and what the
+  // shop's "only cheap while it is low" copy is claiming.
+  it('is near enough the same for every tier at the same level', () => {
+    for (const level of [0, 25, 50, 100]) {
+      const days = BUILDINGS.map((def) =>
+        paybackDays(def, [{ id: def.id, level }]),
+      ).filter(Number.isFinite);
+      expect(Math.max(...days) / Math.min(...days)).toBeLessThan(1.2);
+    }
+  });
+
+  it('is infinite for a building that cannot be raised any further', () => {
+    const capped: OwnedBuilding[] = [{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }];
+    expect(paybackDays(greenhouse, capped)).toBe(Infinity);
+  });
+
+  it('names the shortest payback the city can actually afford', () => {
+    const buildings: OwnedBuilding[] = [
+      { id: 'greenhouse', level: 60 },
+      { id: 'windmill', level: 1 },
+    ];
+    // The Windmill is far younger, so its next level is the better buy — but
+    // only while there is enough Lumen to take it.
+    expect(bestBuy([greenhouse, windmill], buildings, 1_000_000)?.id).toBe('windmill');
+    expect(bestBuy([greenhouse, windmill], buildings, 0)).toBeNull();
   });
 });
 
@@ -177,6 +218,31 @@ describe('marginalOutput', () => {
   it('includes the district bonus a brand new building would unlock', () => {
     expect(marginalOutput(windmill, [{ id: 'greenhouse', level: 1 }])).toBeGreaterThan(
       windmill.incomePerLevel,
+    );
+  });
+
+  it('quotes the whole purchase when asked for several levels', () => {
+    const buildings: OwnedBuilding[] = [{ id: 'greenhouse', level: 4 }];
+    expect(marginalOutput(greenhouse, buildings, 10)).toBe(
+      cityOutput([{ id: 'greenhouse', level: 14 }]) - cityOutput(buildings),
+    );
+  });
+
+  // The whole reason the shop quotes a bulk total rather than ten times the
+  // single-level figure: a run that crosses a milestone is worth more.
+  it('beats ten single levels when the run crosses a milestone', () => {
+    const buildings: OwnedBuilding[] = [{ id: 'greenhouse', level: 20 }];
+    expect(marginalOutput(greenhouse, buildings, 10)).toBeGreaterThan(
+      marginalOutput(greenhouse, buildings) * 10,
+    );
+  });
+
+  it('never quotes levels past the cap', () => {
+    const capped: OwnedBuilding[] = [{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }];
+    expect(marginalOutput(greenhouse, capped, 10)).toBe(0);
+    expect(marginalOutput(greenhouse, [{ id: 'greenhouse', level: 195 }], 10)).toBe(
+      cityOutput([{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }]) -
+        cityOutput([{ id: 'greenhouse', level: 195 }]),
     );
   });
 });

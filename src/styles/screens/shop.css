@@ -29,8 +29,28 @@
 }
 
 .shop__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* The city-wide multipliers. Quieter than the payout above it, and phrased to
+   pair with the "This building:" line on each card. */
+.shop__multipliers {
+  font-size: var(--text-xs);
+  color: color-mix(in srgb, var(--color-text-muted) 85%, transparent);
+  text-wrap: pretty;
+}
+
+/* The one sentence that explains why two cards quote wildly different paybacks.
+   Sits below the multipliers, quieter still — it is a rule to read once. */
+.shop__note {
+  font-size: var(--text-xs);
+  color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+  text-wrap: pretty;
+  font-style: italic;
 }
 
 /* Buy-amount selector. Past the first few tiers a day's Lumen is worth dozens
@@ -137,6 +157,67 @@
 
 .shop-card__stat--muted {
   color: var(--color-text-muted);
+}
+
+/* Payback. The figure that ranks the whole board on one scale, so it sits
+   directly under the gain it qualifies and picks up warmth when it is short. */
+.shop-card__payback {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.shop-card__payback--good {
+  color: var(--amber);
+}
+
+/* A building's specialty — the reason to level it that has nothing to do with
+   Lumen. Muted until it is actually doing something. */
+.shop-card__specialty {
+  font-size: var(--text-xs);
+  color: color-mix(in srgb, var(--color-text-muted) 80%, transparent);
+  text-wrap: pretty;
+}
+
+.shop-card__specialty--live {
+  color: var(--color-accent-soft);
+}
+
+/* The Hearth Hall. Spans the grid and carries the city's own colour, because
+   it is not a rung on the ladder — it is what decides how high the ladder goes. */
+.shop-card--charter {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--amber) 30%, transparent);
+  background: color-mix(in srgb, var(--amber) 5%, var(--color-surface));
+}
+
+.shop-card--charter-ready {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+}
+
+/* The breadth requirement. Stated whether or not it is met — watching the count
+   climb is most of what makes the next charter feel reachable. */
+.shop-card__requirement {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.shop-card__requirement--met {
+  color: var(--amber);
+}
+
+/* Held at the ceiling: a different state from maxed, and a different remedy. */
+.shop-card__owned--held {
+  color: var(--color-text-muted);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* Which levels the figure beside it covers — reads as a qualifier, not a
+   second number to weigh. */
+.shop-card__range {
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 /* Where a building's multipliers come from. Deliberately quiet — it's the

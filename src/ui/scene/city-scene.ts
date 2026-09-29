@@ -534,10 +534,10 @@ export function createCityScene(store: Store): CityScene {
   let renderedBuildings: string | null = null;
 
   function renderBuildings(state: AerieState): void {
-    const signature = state.city.buildings
-      .map((entry) => `${entry.id}:${entry.level}`)
-      .sort()
-      .join(',');
+    const signature = [
+      `charter:${state.city.charter}`,
+      ...state.city.buildings.map((entry) => `${entry.id}:${entry.level}`).sort(),
+    ].join(',');
     if (signature === renderedBuildings) return;
     renderedBuildings = signature;
 
@@ -545,7 +545,7 @@ export function createCityScene(store: Store): CityScene {
 
     // The hearth is always there — the city is never empty. It stands on the
     // home page, so it pans away like everything else.
-    buildingLayer.appendChild(placeAt(600, 418, hearthHall()));
+    buildingLayer.appendChild(placeAt(600, 418, hearthHall(state.city.charter)));
 
     /** Where a building stands, in absolute scene coords, or `null` if unknown. */
     const slotFor = (id: string): { x: number; y: number; cx: number } | null => {

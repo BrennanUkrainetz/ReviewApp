@@ -22,6 +22,11 @@ it's in full golden hour. Every 5 days pays a bonus chest, every 20 earns a real
 lunch out. A **day off** is an explicit button that holds the streak without a
 review; missing a day entirely resets the run to 0.
 
+The week is Monday to Friday. Weekends can't be missed — a Friday review carries
+the run into Monday, and heat holds across the weekend the same way. Logging a
+review on a Saturday still pays, but it counts as a bonus rather than a day of
+the streak.
+
 ### The long game
 
 The Lumen curve is exponential and meant to be played for months.
@@ -31,8 +36,8 @@ The Lumen curve is exponential and meant to be played for months.
   effectively uncapped, a building's output **doubles** at levels 10/25/50/100,
   and several feed **synergy** bonuses into their neighbours. The shop buys in
   ×1 / ×10 / Max.
-- **Heat** — consecutive full-clear days multiply everything, up to ×3. A floor
-  pass keeps the streak but not the combo.
+- **Heat** — consecutive full-clear weekdays multiply everything, up to ×3. A
+  floor pass keeps the streak but not the combo.
 - **A daily contract** — one rotating objective, fixed for the calendar day,
   paying a share of the day's payout when it lands.
 - **Motes** — a few catchable Lumen bursts that appear over the city _after_ a

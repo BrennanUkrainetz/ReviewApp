@@ -35,6 +35,15 @@ export interface ResearchMods {
   extraWindows: CollectionWindow[];
   /** Multiplies Cinder earned. */
   cinder: number;
+  /**
+   * Flat extra Cinder on every full clear, before the multiplier.
+   *
+   * Nothing in the Workshop grants this — it is the Greenhouse's specialty
+   * (`domain/specialties.ts`), and it lives here rather than on `Mods` because
+   * `cinderFor` already receives this half of the bundle and nothing else needs
+   * to know where the number came from.
+   */
+  cinderFlat: number;
   /** Added to `HEAT_CAP_DAYS`. */
   heatCap: number;
   /** Multiplies what a mote pays. */
@@ -49,6 +58,7 @@ export const NO_RESEARCH: ResearchMods = {
   windowMinutes: 0,
   extraWindows: [],
   cinder: 1,
+  cinderFlat: 0,
   heatCap: 0,
   mote: 1,
 };
@@ -143,7 +153,8 @@ export function cinderFor(
   const base =
     CINDER_PER_FULL_CLEAR +
     (completesPerfectDay ? CINDER_PERFECT_DAY_BONUS : 0) +
-    (heatBonus?.bonus ?? 0);
+    (heatBonus?.bonus ?? 0) +
+    mods.cinderFlat;
 
   return Math.round(base * mods.cinder);
 }

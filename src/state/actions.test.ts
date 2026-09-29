@@ -3,11 +3,13 @@ import { defaultItems } from '@/config/checklists';
 import { getBuilding } from '@/config/shop';
 import {
   BUILDING_MAX_LEVEL,
+  CHARTER_MAX_LEVEL,
   HEAT_PER_DAY,
   MOTE_CHARGES_PER_REVIEW,
   MOTE_FLOOR_LUMEN,
 } from '@/config/tuning';
-import { addDays } from '@/domain/dates';
+import { addDays, addWeekdays } from '@/domain/dates';
+import { buildingCeiling } from '@/domain/charter';
 import { buildingCost, cityOutput } from '@/domain/economy';
 import type { Rng } from '@/domain/rewards';
 import { pendingAether } from '@/domain/ascension';
@@ -15,6 +17,7 @@ import { contractFor } from '@/domain/contracts';
 import {
   ascend,
   buyBuilding,
+  buyCharter,
   buyCosmetic,
   buyPerk,
   catchMote,
@@ -35,7 +38,8 @@ import type { AerieState } from './types';
 const greenhouse = getBuilding('greenhouse')!;
 
 const AT = (key: string) => new Date(`${key}T09:00:00`);
-const TODAY = '2026-07-21';
+const TODAY = '2026-07-21'; // a Tuesday
+const SATURDAY = '2026-07-18';
 
 /** RNG that never rolls a cosmetic drop, keeping payout assertions clean. */
 const noDrops: Rng = () => 0.999;
@@ -119,6 +123,35 @@ describe('completeReview', () => {
     expect(store.getState().streak.current).toBe(1);
   });
 
+  it('pays a weekend review without moving the streak', () => {
+    const base = createInitialState();
+    const store = makeStore({
+      ...base,
+      streak: {
+        ...base.streak,
+        current: 5,
+        longest: 5,
+        lastCompletedDate: '2026-07-17', // the Friday before
+        lastActiveDate: '2026-07-17',
+      },
+    });
+
+    const outcome = completeReview(
+      store,
+      'morning',
+      defaultItems('morning').map((i) => i.id),
+      { now: AT(SATURDAY), rng: noDrops },
+    );
+
+    const state = store.getState();
+    expect(outcome.score.tier).toBe('full');
+    expect(outcome.advancedStreak).toBe(false);
+    expect(outcome.reward.totalLumen).toBeGreaterThan(0);
+    expect(state.streak.current).toBe(5);
+    // ...and it is still on the record, because it happened.
+    expect(state.history[0]?.date).toBe(SATURDAY);
+  });
+
   it('pays out but does not advance the streak on a partial', () => {
     const store = makeStore();
     const nonCore = defaultItems('daily')
@@ -155,6 +188,34 @@ describe('completeReview', () => {
     expect(first.reward.totalLumen).toBe(
       first.reward.reviewLumen + first.reward.bonusLumen + first.reward.contractLumen,
     );
+  });
+
+  it('scales the review payout with the city instead of leaving it flat', () => {
+    const base = createInitialState();
+    const doneIds = defaultItems('morning').map((item) => item.id);
+    const payoutWith = (level: number) => {
+      const store = createStore({
+        ...base,
+        city: { ...base.city, buildings: [{ id: 'greenhouse', level }] },
+      });
+      return completeReview(store, 'morning', doneIds, { now: AT(TODAY), rng: noDrops })
+        .reward.reviewLumen;
+    };
+
+    // The point of the change: past the flat floor, a city worth ten times
+    // more opens a chest worth ten times more, rather than the same handful of
+    // Lumen it paid on day one.
+    const modest = payoutWith(20);
+    const large = payoutWith(60);
+    const outputRatio =
+      cityOutput([{ id: 'greenhouse', level: 60 }]) /
+      cityOutput([{ id: 'greenhouse', level: 20 }]);
+    expect(large / modest).toBeCloseTo(outputRatio, 1);
+    // ...and it is a real share of what the city makes in a day, not a rounding
+    // error beside it.
+    expect(large).toBeGreaterThan(cityOutput([{ id: 'greenhouse', level: 60 }]) / 4);
+    // A brand new city still gets the flat rate as a floor.
+    expect(payoutWith(0)).toBeGreaterThan(0);
   });
 
   it('unlocks a dropped cosmetic', () => {
@@ -218,6 +279,15 @@ describe('takeDayOff', () => {
     expect(state.streak.daysOffUsed).toBe(1);
     expect(state.history.filter((day) => day.dayOff)).toHaveLength(1);
   });
+
+  it('spends nothing on a weekend — those are off already', () => {
+    const store = makeStore();
+    takeDayOff(store, AT(SATURDAY));
+
+    const state = store.getState();
+    expect(state.streak.daysOffUsed).toBe(0);
+    expect(state.history).toHaveLength(0);
+  });
 });
 
 describe('motes', () => {
@@ -269,10 +339,10 @@ describe('motes', () => {
 });
 
 describe('heat and contracts reach the payout', () => {
-  /** History of `days` consecutive full-clear days, ending yesterday. */
+  /** History of `days` consecutive full-clear weekdays, ending yesterday. */
   function fullClearHistory(days: number): AerieState['history'] {
     return Array.from({ length: days }, (_, i) => ({
-      date: addDays(TODAY, -(days - i)),
+      date: addWeekdays(TODAY, -(days - i)),
       morning: {
         completed: true,
         tier: 'full' as const,
@@ -408,6 +478,7 @@ describe('ascend', () => {
           { id: 'greenhouse', level: 12 },
           { id: 'windmill', level: 8 },
         ],
+        charter: 8,
         cosmetics: { unlocked: ['teal-lanterns'], equipped: ['teal-lanterns'] },
       },
       history: [{ date: TODAY, morning: null, daily: null, dayOff: true }],
@@ -690,15 +761,119 @@ describe('shop actions', () => {
       currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0 , cinder: 0},
       city: {
         buildings: [{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }],
+        charter: 8,
         cosmetics: { unlocked: [], equipped: [] },
       },
     });
     expect(buyBuilding(store, 'greenhouse')).toEqual({
       ok: false,
-      reason: 'Already at max level.',
+      reason: 'Built as high as it goes.',
     });
   });
 
+  it('refuses a level the charter has not chartered, and says so', () => {
+    const store = makeStore({
+      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: {
+        buildings: [{ id: 'greenhouse', level: buildingCeiling(1) }],
+        charter: 1,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
+    });
+    const result = buyBuilding(store, 'greenhouse');
+    expect(result.ok).toBe(false);
+    // Not "not enough Lumen" — the city is rich. Saying so would send a player
+    // off to earn money that changes nothing.
+    expect(result.ok === false && result.reason).toContain('charter');
+  });
+
+  it('buys every level up to the ceiling and then stops', () => {
+    const store = makeStore({
+      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: { buildings: [], charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+    });
+    buyBuilding(store, 'greenhouse', 'max');
+    expect(store.getState().city.buildings[0]?.level).toBe(buildingCeiling(1));
+  });
+});
+
+describe('the charter', () => {
+  const wide = (level: number) =>
+    ['greenhouse', 'windmill', 'market-stall', 'lighthouse'].map((id) => ({ id, level }));
+
+  it('refuses a charter the city is not broad enough for', () => {
+    const store = makeStore({
+      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: {
+        buildings: [{ id: 'greenhouse', level: 25 }],
+        charter: 1,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
+    });
+    const result = buyCharter(store);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain('kinds of building');
+    expect(store.getState().city.charter).toBe(1);
+  });
+
+  it('raises the ceiling once the city has gone wide enough', () => {
+    const store = makeStore({
+      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+    });
+    const result = buyCharter(store);
+    expect(result.ok).toBe(true);
+    expect(store.getState().city.charter).toBe(2);
+    expect(result.ok && result.ceiling).toBe(buildingCeiling(2));
+
+    // And the building that was stuck a moment ago can move again.
+    expect(buyBuilding(store, 'greenhouse').ok).toBe(true);
+  });
+
+  it('charges for it', () => {
+    const store = makeStore({
+      currency: { lumen: 100_000_000, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+    });
+    const before = store.getState().currency.lumen;
+    const result = buyCharter(store);
+    expect(result.ok).toBe(true);
+    expect(store.getState().currency.lumen).toBe(before - (result.ok ? result.spent : 0));
+  });
+
+  it('refuses when the breadth is there but the Lumen is not', () => {
+    const store = makeStore({
+      currency: { lumen: 0, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+    });
+    expect(buyCharter(store)).toEqual({ ok: false, reason: 'Not enough Lumen.' });
+  });
+
+  it('has nothing left to sell at the last charter', () => {
+    const store = makeStore({
+      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      city: {
+        buildings: wide(200),
+        charter: CHARTER_MAX_LEVEL,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
+    });
+    expect(buyCharter(store).ok).toBe(false);
+  });
+
+  // The charter is what the run earned, not something that survives it — that
+  // is what perks are for.
+  it('resets with the city when it ascends', () => {
+    const store = makeStore({
+      currency: { lumen: 0, runLumen: 0, lifetimeLumen: 1e12, cinder: 0 },
+      city: { buildings: wide(120), charter: 6, cosmetics: { unlocked: [], equipped: [] } },
+    });
+    expect(ascend(store).ok).toBe(true);
+    expect(store.getState().city.charter).toBe(1);
+  });
+});
+
+describe('cosmetics', () => {
   it('buys a cosmetic, equips it, and swaps out the one in its slot', () => {
     const store = makeStore({
       currency: { lumen: 5_000, runLumen: 5_000, lifetimeLumen: 5_000 , cinder: 0},

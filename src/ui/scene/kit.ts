@@ -15,6 +15,7 @@
  *   properties, which is what lets a building drawn today take part in the
  *   streak lighting and the altitude bands for free.
  */
+import { BUILDING_MILESTONE_INTERVAL } from '@/config/tuning';
 import { svg } from '../dom';
 
 export type Fill = 'lit' | 'shade' | 'roof' | 'rock';
@@ -143,14 +144,18 @@ export function widthAt(spec: BuildingSpec, level: number): number {
 }
 
 /**
- * Levels at which a side annex is added. These line up with the output
- * milestones in `config/tuning.ts` on purpose: the level that doubles a
- * building's Lumen is the level you can see it grow.
+ * Side wings, one per output doubling — the level that doubles a building's
+ * Lumen is the level you can see it grow.
+ *
+ * Capped well below the twenty doublings a building can now earn: the wings
+ * step outward as they multiply, and past six they walk off the island. So a
+ * heavily-levelled building keeps growing taller and the sprawl stops, which is
+ * the right way round for a skyline.
  */
-const ANNEX_LEVELS = [10, 25, 50, 100, 150, 200];
+const MAX_ANNEXES = 6;
 
 export function annexCount(level: number): number {
-  return ANNEX_LEVELS.filter((threshold) => level >= threshold).length;
+  return Math.min(MAX_ANNEXES, Math.floor(level / BUILDING_MILESTONE_INTERVAL));
 }
 
 /* ------------------------------------------------------------------ */

@@ -60,6 +60,16 @@
   background: color-mix(in srgb, var(--dim) 70%, transparent);
 }
 
+/* Set aside, not skipped — it reads as an item that was never in play rather
+   than one that was missed. */
+.review__pip--set-aside {
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--dim) 45%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
 .review__pip--current {
   background: color-mix(in srgb, var(--mist) 55%, transparent);
 }
@@ -251,6 +261,17 @@
 .review-summary__skipped-item::before {
   content: '·';
   margin-right: var(--space-2);
+}
+
+.review-summary__set-aside {
+  border: 1px dashed var(--color-border-strong);
+  background: transparent;
+}
+
+.review-summary__set-aside-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-wrap: balance;
 }
 
 .review-summary .btn {

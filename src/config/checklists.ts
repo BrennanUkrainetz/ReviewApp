@@ -41,7 +41,14 @@ export const CHECKLIST_META: Record<ReviewId, ChecklistMeta> = {
 
 const DEFAULT_ITEMS: Record<ReviewId, ChecklistItem[]> = {
   morning: [
-    { id: 'lunch', label: 'Take lunch to fridge', points: 1, core: false },
+    {
+      id: 'lunch',
+      label: 'Take lunch to fridge',
+      hint: 'Nothing to do on a day at home — skip it and it costs nothing.',
+      points: 1,
+      core: false,
+      optional: true,
+    },
     { id: 'drink', label: 'Make a drink', points: 1, core: false },
     { id: 'calendar', label: 'Review calendar', points: 1, core: false },
     { id: 'email', label: 'Look at emails', points: 1, core: false },
@@ -92,7 +99,12 @@ export function defaultChecklists(): Record<ReviewId, ChecklistItem[]> {
   return { morning: defaultItems('morning'), daily: defaultItems('daily') };
 }
 
-/** Total points available in a review, excluding the full-clear bonus. */
+/**
+ * Total points available in a review, excluding the full-clear bonus.
+ *
+ * This is the ceiling with every item in play. A run that sets an optional
+ * item aside is scored against a lower one — see `ScoreResult.availablePoints`.
+ */
 export function maxPoints(checklist: Checklist): number {
   return checklist.items.reduce((sum, item) => sum + item.points, 0);
 }
