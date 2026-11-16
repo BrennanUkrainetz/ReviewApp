@@ -28,15 +28,22 @@
  * goes further and grants whatever charter that city had already earned, so
  * nobody opens the app to a city frozen by a rule that did not exist yesterday.
  *
- * Pure functions over levels and a daily output figure. The Lumen price is
- * passed in rather than computed here: it is a share of the city's own output,
- * and reaching for `cityOutput` would make `economy` and this module import
- * each other.
+ * ## What it costs
+ *
+ * Each charter has one fixed price, set by the building its requirement is
+ * about: a few levels of the newest tier it asks for, at the height it asks for
+ * it. It used to be a few days of the city's *current* output, which meant it
+ * could never be caught — every Lumen earned toward it raised it, and every
+ * building bought to meet the requirement raised it again. A fixed price is
+ * something you save toward; a moving one is a treadmill.
+ *
+ * Pure functions over levels. Nothing here reads the city's output.
  */
 import { BUILDINGS } from '@/config/shop';
 import {
+  BUILDING_COST_GROWTH,
   BUILDING_MAX_LEVEL,
-  CHARTER_COST_DAYS,
+  CHARTER_COST_LEVELS,
   CHARTER_KINDS_OVER_LEVEL,
   CHARTER_LEVELS_PER_STEP,
   CHARTER_MAX_LEVEL,
@@ -62,11 +69,6 @@ export function charterOutputMultiplier(charter: number): number {
   return 1 + CHARTER_OUTPUT_PER_LEVEL * (clampCharter(charter) - CHARTER_MIN_LEVEL);
 }
 
-/** Lumen price of the next charter, as days of the city's own output. */
-export function charterCost(dailyOutput: number): number {
-  return Math.ceil(Math.max(CHARTER_MIN_COST, dailyOutput * CHARTER_COST_DAYS));
-}
-
 /** What charter `level` asks for, or `null` for a level that cannot be reached. */
 export function charterRequirement(
   level: number,
@@ -76,6 +78,25 @@ export function charterRequirement(
     kinds: level + CHARTER_KINDS_OVER_LEVEL,
     atLevel: (level - 1) * CHARTER_LEVELS_PER_STEP,
   };
+}
+
+/**
+ * Lumen price of charter `level` — fixed, whatever the city is producing.
+ *
+ * `CHARTER_COST_LEVELS` levels of the newest tier the requirement names (the
+ * `kinds`-th building on the ladder), priced at the height it names. So the
+ * charter always costs about as much as a handful of the purchases that met
+ * its requirement, and grows with the ladder rather than with the balance.
+ * Zero for a level that cannot be bought.
+ */
+export function charterCost(level: number): number {
+  const requirement = charterRequirement(level);
+  if (!requirement) return 0;
+  const anchor = BUILDINGS[Math.min(requirement.kinds, BUILDINGS.length) - 1];
+  if (!anchor) return CHARTER_MIN_COST;
+  const price =
+    anchor.baseCost * BUILDING_COST_GROWTH ** requirement.atLevel * CHARTER_COST_LEVELS;
+  return Math.ceil(Math.max(CHARTER_MIN_COST, price));
 }
 
 /** How many distinct buildings stand at `atLevel` or higher. */
@@ -118,14 +139,13 @@ export interface CharterProgress {
 export function charterProgress(
   buildings: readonly OwnedBuilding[],
   charter: number,
-  dailyOutput: number,
   lumen = 0,
 ): CharterProgress {
   const level = clampCharter(charter);
   const next = level < CHARTER_MAX_LEVEL ? level + 1 : null;
   const requirement = next === null ? null : charterRequirement(next);
   const standing = requirement ? kindsAtLevel(buildings, requirement.atLevel) : 0;
-  const cost = charterCost(dailyOutput);
+  const cost = next === null ? 0 : charterCost(next);
   const met = requirement !== null && standing >= requirement.kinds;
 
   return {

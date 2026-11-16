@@ -30,9 +30,14 @@ export function contractFor(date: DateKey): ContractDef {
   return CONTRACTS[index] ?? CONTRACTS[0]!;
 }
 
-/** What settling today's contract pays, given the day's payout so far. */
-export function contractBonus(contract: ContractDef, dayPayout: number): number {
-  return Math.max(CONTRACT_BONUS_FLOOR, Math.round(dayPayout * contract.bonusShare));
+/**
+ * What settling today's contract pays: a share of the city's daily output,
+ * already multiplied by the day's heat. Struck against the city alone — not
+ * the city plus the review — so the contract scales with the city without
+ * compounding on top of the review's own share of it.
+ */
+export function contractBonus(contract: ContractDef, heatedOutput: number): number {
+  return Math.max(CONTRACT_BONUS_FLOOR, Math.round(heatedOutput * contract.bonusShare));
 }
 
 /**

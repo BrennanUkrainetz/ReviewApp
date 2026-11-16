@@ -8,11 +8,12 @@
  * a stale preview but can never charge the wrong price.
  */
 import {
-  ASCENSION_EXPONENT,
-  ASCENSION_LUMEN_SCALE,
+  AETHER_LOG_FLOOR,
+  AETHER_POWER,
+  AETHER_SCALE,
   MIN_ASCENSION_AETHER,
 } from '@/config/ascension';
-import { getPerk, PERKS, type PerkDef } from '@/config/perks';
+import { perkMaxed, perkRankCost, PERKS, type PerkDef } from '@/config/perks';
 import { BUILDING_MAX_LEVEL } from '@/config/tuning';
 import type { AerieState, AscensionState } from '@/state/types';
 import { achievementMultiplier } from './achievements';
@@ -36,6 +37,10 @@ export interface Mods {
   drop: number;
   /** Multiplies milestone chest bonuses. */
   milestone: number;
+  /** Multiplies contract and weekly-expedition bonuses. */
+  contract: number;
+  /** Extra streak wards that can be held at once. */
+  wardSlots: number;
   /** Share of the Lumen balance that survives an ascension. */
   carryLumen: number;
   /** Multiplies the Aether an ascension grants. */
@@ -66,6 +71,8 @@ export const NO_MODS: Mods = {
   streakRate: 0,
   drop: 0,
   milestone: 1,
+  contract: 1,
+  wardSlots: 0,
   carryLumen: 0,
   aether: 1,
   moteCharges: 0,
@@ -74,50 +81,71 @@ export const NO_MODS: Mods = {
   research: NO_RESEARCH,
 };
 
-/**
- * Folds a set of owned perks into one `Mods`.
- *
- * Multipliers within a branch stack multiplicatively — three ×2 perks make ×8,
- * not ×6. That is what makes the deep end of a branch worth saving for.
- * Discounts take the *best* value rather than stacking, so the branch can't
- * drive building prices toward zero.
- */
-export function modsFromPerks(owned: readonly string[]): Mods {
-  const mods: Mods = { ...NO_MODS };
+/** A perk's owned rank in a save's rank map. */
+export function rankOf(ranks: Readonly<Record<string, number>>, id: string): number {
+  const rank = ranks[id];
+  return typeof rank === 'number' && rank > 0 ? Math.floor(rank) : 0;
+}
 
-  for (const id of owned) {
-    const perk = getPerk(id);
-    if (!perk) continue;
+/**
+ * Folds owned perk ranks into one `Mods`.
+ *
+ * Each rank applies its effect once: a ×1.2 perk at rank 3 is ×1.728, a +5-day
+ * perk at rank 3 is +15. Multipliers from different perks stack
+ * multiplicatively, which is what makes the deep end of a branch worth saving
+ * for. A rank above a perk's cap (a hand-edited save) counts as the cap.
+ */
+export function modsFromPerks(ranks: Readonly<Record<string, number>>): Mods {
+  const mods: Mods = { ...NO_MODS, research: { ...NO_RESEARCH } };
+
+  for (const perk of PERKS) {
+    const owned = rankOf(ranks, perk.id);
+    const rank = perk.maxRank === null ? owned : Math.min(owned, perk.maxRank);
+    if (rank <= 0) continue;
     const effect = perk.effect;
 
     switch (effect.kind) {
       case 'output':
-        mods.output *= effect.factor;
+        mods.output *= effect.factor ** rank;
         break;
       case 'review':
-        mods.review *= effect.factor;
+        mods.review *= effect.factor ** rank;
+        break;
+      case 'contract':
+        mods.contract *= effect.factor ** rank;
         break;
       case 'cost':
-        mods.cost = Math.min(mods.cost, effect.factor);
+        mods.cost *= effect.factor ** rank;
         break;
       case 'streak-cap':
-        mods.streakCap += effect.extra;
+        mods.streakCap += effect.extra * rank;
         break;
       case 'streak-rate':
-        mods.streakRate += effect.extra;
+        mods.streakRate += effect.extra * rank;
         break;
       case 'drop':
-        mods.drop = Math.max(mods.drop, effect.bonus);
+        mods.drop += effect.bonus * rank;
         break;
       case 'milestone':
-        mods.milestone *= effect.factor;
+        mods.milestone *= effect.factor ** rank;
+        break;
+      case 'mote':
+        mods.research.mote *= effect.factor ** rank;
+        break;
+      case 'aether':
+        mods.aether *= effect.factor ** rank;
         break;
       case 'carry-lumen':
-        mods.carryLumen = Math.max(mods.carryLumen, effect.share);
+        mods.carryLumen += effect.share * rank;
         break;
-      case 'foothold':
-        mods.foothold = { count: effect.count, level: effect.level };
+      case 'ward-slots':
+        mods.wardSlots += effect.extra * rank;
         break;
+      case 'foothold': {
+        const step = effect.steps[Math.min(rank, effect.steps.length) - 1];
+        if (step) mods.foothold = { count: step.count, level: step.level };
+        break;
+      }
     }
   }
 
@@ -134,9 +162,10 @@ export function modsFromPerks(owned: readonly string[]): Mods {
  * multiply whatever the trees settled on rather than competing with it.
  */
 export function modsFor(state: AerieState): Mods {
-  const mods = modsFromPerks(state.ascension.perks);
+  const mods = modsFromPerks(state.ascension.perkRanks);
   const collected = achievementMultiplier(state.achievements);
   const charter = charterOutputMultiplier(state.city.charter);
+  const research = researchModsFrom(state.research);
 
   return applySpecialties(
     {
@@ -144,7 +173,8 @@ export function modsFor(state: AerieState): Mods {
       output: mods.output * collected * charter,
       review: mods.review * collected,
       levelCeiling: buildingCeiling(state.city.charter),
-      research: researchModsFrom(state.research),
+      // Perks and research both reach the mote multiplier; they stack.
+      research: { ...research, mote: research.mote * mods.research.mote },
     },
     state.city.buildings,
   );
@@ -155,15 +185,28 @@ export function modsFor(state: AerieState): Mods {
 /* ------------------------------------------------------------------ */
 
 /**
- * Total Aether a lifetime Lumen figure is worth, ever.
+ * Total Aether a lifetime Lumen figure is worth, ever — before any multiplier.
  *
  * Calculated from the all-time total rather than the current run, so a grant
  * is always "this total, minus what you have already been paid". Splitting a
- * run in two can therefore never earn more than playing it out.
+ * run in two can therefore never earn more than playing it out. The curve is
+ * explained beside its constants in `config/ascension.ts`.
  */
 export function totalAetherFor(lifetimeLumen: number): number {
-  if (lifetimeLumen <= 0) return 0;
-  return Math.floor((lifetimeLumen / ASCENSION_LUMEN_SCALE) ** ASCENSION_EXPONENT);
+  return Math.floor(rawAetherFor(lifetimeLumen));
+}
+
+/** The unrounded curve, for multiplying and inverting. */
+function rawAetherFor(lifetimeLumen: number): number {
+  if (!(lifetimeLumen > 0)) return 0;
+  const orders = Math.log10(lifetimeLumen) - AETHER_LOG_FLOOR;
+  return orders > 0 ? AETHER_SCALE * orders ** AETHER_POWER : 0;
+}
+
+/** Lifetime Lumen at which the unrounded curve reaches `aether`. */
+function lumenForRawAether(aether: number): number {
+  if (aether <= 0) return 10 ** AETHER_LOG_FLOOR;
+  return 10 ** (AETHER_LOG_FLOOR + (aether / AETHER_SCALE) ** (1 / AETHER_POWER));
 }
 
 /**
@@ -176,32 +219,33 @@ export function totalAetherFor(lifetimeLumen: number): number {
  * accounting exists to prevent.
  */
 export function pendingAether(state: AerieState): number {
-  const total = totalAetherFor(state.currency.lifetimeLumen) * modsFor(state).aether;
+  const total = rawAetherFor(state.currency.lifetimeLumen) * modsFor(state).aether;
   return Math.max(0, Math.floor(total) - state.ascension.aetherEarned);
 }
 
-/** Whether there is enough on the table for ascending to be worth it. */
+/** Whether there is enough on the table for ascending to be allowed. */
 export function canAscend(state: AerieState): boolean {
   return pendingAether(state) >= MIN_ASCENSION_AETHER;
 }
 
 /**
- * Lifetime Lumen needed for the next whole point of Aether — the "you are
- * this far off" number on the ascension screen.
+ * Lifetime Lumen at which ascending would pay `target` Aether — the "you are
+ * this far off" number on the ascension screen. Defaults to the minimum an
+ * ascension may pay, or one more than is pending once that is met.
  */
-export function lumenForNextAether(state: AerieState): number {
+export function lumenForNextAether(state: AerieState, target?: number): number {
   const grant = modsFor(state).aether;
-  const owed = (lifetime: number): number =>
-    Math.floor(totalAetherFor(lifetime) * grant);
+  const want = target ?? Math.max(MIN_ASCENSION_AETHER, pendingAether(state) + 1);
+  const pays = (lumen: number): number =>
+    Math.floor(rawAetherFor(lumen) * grant) - state.ascension.aetherEarned;
 
-  const target = owed(state.currency.lifetimeLumen) + 1;
-  let lumen = Math.ceil(
-    (target / grant) ** (1 / ASCENSION_EXPONENT) * ASCENSION_LUMEN_SCALE,
-  );
-  // Inverting a floored power lands a hair under the threshold about as often
+  let lumen = Math.ceil(lumenForRawAether((state.ascension.aetherEarned + want) / grant));
+  // Inverting a floored curve lands a hair under the threshold about as often
   // as it lands on it, and a target that does not actually pay out is worse
-  // than useless. Walk up until it genuinely does.
-  while (owed(lumen) < target) lumen += 1;
+  // than useless. Nudge up until it genuinely does.
+  for (let guard = 0; guard < 64 && pays(lumen) < want; guard += 1) {
+    lumen = Math.ceil(lumen * 1.000_001) + 1;
+  }
   return lumen;
 }
 
@@ -209,19 +253,33 @@ export function lumenForNextAether(state: AerieState): number {
 /* The perk tree                                                       */
 /* ------------------------------------------------------------------ */
 
-export type PerkStatus = 'owned' | 'available' | 'locked' | 'unaffordable';
+export type PerkStatus = 'maxed' | 'available' | 'locked' | 'unaffordable';
 
-/** Where a perk stands for a given save: owned, buyable, too dear, or gated. */
+/**
+ * Where a perk's next rank stands for a given save: bought out, buyable, too
+ * dear, or gated behind another perk's rank.
+ */
 export function perkStatus(perk: PerkDef, ascension: AscensionState): PerkStatus {
-  if (ascension.perks.includes(perk.id)) return 'owned';
-  if (perk.requires && !ascension.perks.includes(perk.requires)) return 'locked';
-  return ascension.aether >= perk.cost ? 'available' : 'unaffordable';
+  const rank = rankOf(ascension.perkRanks, perk.id);
+  if (perkMaxed(perk, rank)) return 'maxed';
+  if (
+    perk.requires &&
+    rankOf(ascension.perkRanks, perk.requires.id) < perk.requires.rank
+  ) {
+    return 'locked';
+  }
+  return ascension.aether >= perkRankCost(perk, rank) ? 'available' : 'unaffordable';
 }
 
-/** Perks whose prerequisite is met and which are not yet owned. */
+/** Perks whose prerequisite is met and which still have a rank to buy. */
 export function purchasablePerks(ascension: AscensionState): PerkDef[] {
   return PERKS.filter((perk) => {
     const status = perkStatus(perk, ascension);
     return status === 'available' || status === 'unaffordable';
   });
+}
+
+/** Total perk ranks owned, across the whole tree. */
+export function totalPerkRanks(ascension: AscensionState): number {
+  return PERKS.reduce((sum, perk) => sum + rankOf(ascension.perkRanks, perk.id), 0);
 }

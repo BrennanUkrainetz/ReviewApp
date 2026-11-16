@@ -7,17 +7,21 @@
  */
 import { defaultItems, REVIEW_IDS } from '@/config/checklists';
 import { getAchievement } from '@/config/achievements';
-import { getPerk } from '@/config/perks';
+import { getPerk, LEGACY_PERK_COSTS } from '@/config/perks';
 import { getResearch } from '@/config/research';
 import { CHARTER_MIN_LEVEL } from '@/config/tuning';
+import { totalAetherFor } from '@/domain/ascension';
 import { charterEarnedBy, clampCharter } from '@/domain/charter';
 import { isDateKey } from '@/domain/dates';
 import { sanitizeItems } from './checklists';
 import { createInitialState, STATE_VERSION } from './defaults';
 import type {
   AerieState,
+  AscensionState,
+  BrokenRun,
   ChecklistItem,
   DayRecord,
+  MilestoneState,
   ReviewId,
   ReviewRecord,
 } from './types';
@@ -92,6 +96,98 @@ function coerceDay(value: unknown): DayRecord | null {
     morning: coerceReview(value['morning']),
     daily: coerceReview(value['daily']),
     dayOff: bool(value['dayOff'], false),
+    // Absent before v10. Only meaningful alongside a day off.
+    ...(bool(value['warded'], false) && bool(value['dayOff'], false)
+      ? { warded: true }
+      : {}),
+  };
+}
+
+function coerceMilestones(value: unknown, base: MilestoneState): MilestoneState {
+  const milestones = isObject(value) ? value : {};
+  return {
+    nextBigAt: num(milestones['nextBigAt'], base.nextBigAt),
+    nextSmallAt: num(milestones['nextSmallAt'], base.nextSmallAt),
+    smallInterval: num(milestones['smallInterval'], base.smallInterval),
+    bigInterval: num(milestones['bigInterval'], base.bigInterval),
+    totalBigMilestonesHit: num(milestones['totalBigMilestonesHit'], 0),
+  };
+}
+
+function coerceBroken(value: unknown, base: MilestoneState): BrokenRun | null {
+  if (!isObject(value)) return null;
+  const lastActiveDate = value['lastActiveDate'];
+  const brokenOn = value['brokenOn'];
+  const length = num(value['length'], 0);
+  if (!isDateKey(lastActiveDate) || !isDateKey(brokenOn) || length <= 0) return null;
+  return {
+    length,
+    lastActiveDate,
+    brokenOn,
+    milestones: coerceMilestones(value['milestones'], base),
+  };
+}
+
+/**
+ * The old Aether curve, `(lifetime / 100,000) ^ (1/3)`. Only `migrate` needs
+ * it, to work out what share of an old save's owed Aether had been paid.
+ */
+function legacyAetherFor(lifetimeLumen: number): number {
+  return lifetimeLumen > 0 ? Math.floor((lifetimeLumen / 100_000) ** (1 / 3)) : 0;
+}
+
+/**
+ * The ascension half of a save.
+ *
+ * v10 replaced the one-off perk tree with ranked perks *and* replaced the
+ * Aether curve, which had been paying out exponentially — the reason for the
+ * rebalance in the first place. An older save that has ascended is therefore
+ * re-based rather than carried over:
+ *
+ * - Every perk is refunded. The old nodes do not map onto the new ranks, and
+ *   a clean slate to re-spend on is fairer than a guessed conversion.
+ * - Aether is recalculated under the new curve. The save keeps the same
+ *   *share* of its lifetime's worth that it had already been paid, so a city
+ *   that ascended last week has little pending and one that is mid-run keeps
+ *   its run's worth to come. All of it is unspent, ready for the new tree.
+ *
+ * Ascension count, and so altitude and the high islands, is untouched.
+ */
+function coerceAscension(
+  raw: Unknown,
+  version: number,
+  lifetimeLumen: number,
+): AscensionState {
+  const count = Math.max(0, num(raw['count'], 0));
+
+  if (version < 10) {
+    const legacyPerks = strList(raw['perks']);
+    const spent = legacyPerks.reduce((sum, id) => sum + (LEGACY_PERK_COSTS[id] ?? 0), 0);
+    const earned = Math.max(num(raw['aetherEarned'], 0), num(raw['aether'], 0) + spent);
+    if (earned <= 0) return { count, aether: 0, aetherEarned: 0, perkRanks: {} };
+
+    const owed = legacyAetherFor(lifetimeLumen);
+    const paidShare = owed > 0 ? Math.min(1, earned / owed) : 1;
+    const rebased = Math.floor(totalAetherFor(lifetimeLumen) * paidShare);
+    return { count, aether: rebased, aetherEarned: rebased, perkRanks: {} };
+  }
+
+  // Only perks that still exist, so a renamed perk can't leave a save holding
+  // an effect nothing in the code knows how to apply.
+  const ranksRaw = isObject(raw['perkRanks']) ? raw['perkRanks'] : {};
+  const perkRanks: Record<string, number> = {};
+  for (const [id, value] of Object.entries(ranksRaw)) {
+    const perk = getPerk(id);
+    const rank = Math.floor(num(value, 0));
+    if (!perk || rank <= 0) continue;
+    perkRanks[id] = perk.maxRank === null ? rank : Math.min(rank, perk.maxRank);
+  }
+
+  return {
+    count,
+    aether: Math.max(0, num(raw['aether'], 0)),
+    aetherEarned: Math.max(num(raw['aetherEarned'], 0), num(raw['aether'], 0)),
+    perkRanks,
   };
 }
 
@@ -140,9 +236,8 @@ export function migrate(raw: unknown): AerieState {
   const ascension = isObject(raw['ascension']) ? raw['ascension'] : {};
   const motes = isObject(raw['motes']) ? raw['motes'] : {};
   const vault = isObject(raw['vault']) ? raw['vault'] : {};
-  // Only perks that still exist, so a renamed perk can't leave a save holding
-  // an effect nothing in the code knows how to apply.
-  const perks = strList(ascension['perks']).filter((id) => getPerk(id));
+  const version = num(raw['version'], 0);
+  const milestoneState = coerceMilestones(milestones, base.milestones);
 
   // v1 saves had no `checklists`; the items lived in config, so the defaults
   // *are* that save's checklists.
@@ -161,6 +256,11 @@ export function migrate(raw: unknown): AerieState {
       // v0 saves had no `lastActiveDate`; the completion date is the best guess.
       lastActiveDate: str(streak['lastActiveDate']) ?? lastCompletedDate,
       daysOffUsed: num(streak['daysOffUsed'], 0),
+      // Wards and mending arrived in v10.
+      wards: Math.max(0, Math.floor(num(streak['wards'], 0))),
+      wardsUsed: Math.max(0, num(streak['wardsUsed'], 0)),
+      mendsUsed: Math.max(0, num(streak['mendsUsed'], 0)),
+      broken: coerceBroken(streak['broken'], base.milestones),
     },
     currency: {
       lumen: num(currency['lumen'], 0),
@@ -172,25 +272,8 @@ export function migrate(raw: unknown): AerieState {
       cinder: Math.max(0, num(currency['cinder'], 0)),
     },
     history,
-    milestones: {
-      nextBigAt: num(milestones['nextBigAt'], base.milestones.nextBigAt),
-      nextSmallAt: num(milestones['nextSmallAt'], base.milestones.nextSmallAt),
-      smallInterval: num(milestones['smallInterval'], base.milestones.smallInterval),
-      bigInterval: num(milestones['bigInterval'], base.milestones.bigInterval),
-      totalBigMilestonesHit: num(milestones['totalBigMilestonesHit'], 0),
-    },
-    ascension: {
-      count: Math.max(0, num(ascension['count'], 0)),
-      aether: Math.max(0, num(ascension['aether'], 0)),
-      // Total ever granted is at least what is unspent plus what perks cost.
-      // Anything lower would let a save re-earn Aether it has already spent.
-      aetherEarned: Math.max(
-        num(ascension['aetherEarned'], 0),
-        num(ascension['aether'], 0) +
-          perks.reduce((sum, id) => sum + (getPerk(id)?.cost ?? 0), 0),
-      ),
-      perks,
-    },
+    milestones: milestoneState,
+    ascension: coerceAscension(ascension, version, lifetimeLumen),
     achievements: strList(raw['achievements']).filter((id) => getAchievement(id)),
     // Only research that still exists, for the same reason perks are filtered:
     // a renamed node must not leave a save holding an effect nothing applies.

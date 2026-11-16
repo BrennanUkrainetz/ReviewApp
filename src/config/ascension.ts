@@ -9,17 +9,28 @@
  */
 
 /**
- * Aether granted for a lifetime total is `(lifetime / SCALE) ^ EXPONENT`.
+ * Total Aether a lifetime Lumen figure is worth:
+ * `AETHER_SCALE × (log10(lifetime) − AETHER_LOG_FLOOR) ^ AETHER_POWER`.
  *
- * A cube root, following the shape every prestige curve settles on: the first
- * ascension arrives after a couple of weeks with a handful of Aether, and a
- * thousand-fold richer city is worth ten times as much, not a thousand.
+ * Logarithmic, and it has to be. The Lumen curve is exponential in *time* —
+ * that is the whole shape of the game — so any power of lifetime Lumen, however
+ * small, comes out exponential in time too. The cube root this used to be paid
+ * a first ascension of five hundred Aether after two months of ordinary play,
+ * against a tree that cost two hundred. On the log instead, every order of
+ * magnitude pays a little more than the last: a first ascension around the
+ * seventh week is worth about ten, a trillion-Lumen city about twenty, and one
+ * a million times richer than that about seventy — not two million.
  */
-export const ASCENSION_LUMEN_SCALE = 100_000;
-export const ASCENSION_EXPONENT = 1 / 3;
+export const AETHER_SCALE = 2;
+export const AETHER_LOG_FLOOR = 7;
+export const AETHER_POWER = 1.5;
 
-/** Ascending is refused below this much Aether, so it can't be wasted early. */
-export const MIN_ASCENSION_AETHER = 1;
+/**
+ * Ascending is refused below this much Aether. A handful, not one: an ascension
+ * resets the whole city, and doing it for a single point of Aether is a mistake
+ * the game should not offer.
+ */
+export const MIN_ASCENSION_AETHER = 5;
 
 export interface AltitudeBand {
   name: string;

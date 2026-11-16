@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { ALTITUDE_BANDS, bandFor } from '@/config/ascension';
-import { getPerk, PERKS } from '@/config/perks';
+import { ALTITUDE_BANDS, bandFor, MIN_ASCENSION_AETHER } from '@/config/ascension';
+import { getPerk, perkRankCost, PERKS } from '@/config/perks';
 import { createInitialState } from '@/state/defaults';
 import type { AerieState } from '@/state/types';
 import {
   canAscend,
   lumenForNextAether,
+  modsFor,
   modsFromPerks,
   NO_MODS,
   pendingAether,
   perkStatus,
   totalAetherFor,
+  totalPerkRanks,
 } from './ascension';
 
 function stateWith(patch: {
   lifetimeLumen?: number;
   aetherEarned?: number;
   aether?: number;
-  perks?: string[];
+  perkRanks?: Record<string, number>;
 }): AerieState {
   const base = createInitialState();
   return {
@@ -27,52 +29,96 @@ function stateWith(patch: {
       count: 0,
       aether: patch.aether ?? 0,
       aetherEarned: patch.aetherEarned ?? 0,
-      perks: patch.perks ?? [],
+      perkRanks: patch.perkRanks ?? {},
     },
   };
 }
 
 describe('the perk tree', () => {
-  it('only names prerequisites that exist', () => {
+  it('only names prerequisites that exist, at ranks they can reach', () => {
     for (const perk of PERKS) {
-      if (perk.requires) expect(getPerk(perk.requires)).toBeDefined();
-    }
-  });
-
-  it('never makes a perk cheaper than the one it depends on', () => {
-    for (const perk of PERKS) {
-      const parent = perk.requires ? getPerk(perk.requires) : null;
-      if (parent) expect(perk.cost).toBeGreaterThanOrEqual(parent.cost);
+      if (!perk.requires) continue;
+      const parent = getPerk(perk.requires.id);
+      expect(parent, perk.id).toBeDefined();
+      if (parent?.maxRank != null) {
+        expect(perk.requires.rank).toBeLessThanOrEqual(parent.maxRank);
+      }
     }
   });
 
   it('has no duplicate ids', () => {
     expect(new Set(PERKS.map((p) => p.id)).size).toBe(PERKS.length);
   });
+
+  it('prices every rank above the last', () => {
+    for (const perk of PERKS) {
+      for (let rank = 1; rank < (perk.maxRank ?? 20); rank += 1) {
+        expect(perkRankCost(perk, rank), `${perk.id} r${rank}`).toBeGreaterThanOrEqual(
+          perkRankCost(perk, rank - 1),
+        );
+      }
+    }
+  });
+
+  it('keeps one perk uncapped, so Aether always has somewhere to go', () => {
+    expect(PERKS.some((perk) => perk.maxRank === null)).toBe(true);
+  });
+
+  it('costs far more to finish than a single ascension pays', () => {
+    // The reason for the rebalance: one long run used to clear the whole tree.
+    const finite = PERKS.filter((perk) => perk.maxRank !== null).reduce((sum, perk) => {
+      let total = 0;
+      for (let rank = 0; rank < perk.maxRank!; rank += 1)
+        total += perkRankCost(perk, rank);
+      return sum + total;
+    }, 0);
+    expect(finite).toBeGreaterThan(totalAetherFor(1e20) * 5);
+  });
 });
 
 describe('modsFromPerks', () => {
   it('is the identity with nothing bought', () => {
-    expect(modsFromPerks([])).toEqual(NO_MODS);
+    expect(modsFromPerks({})).toEqual(NO_MODS);
   });
 
-  it('stacks multipliers within a branch multiplicatively', () => {
-    // ×1.5 then ×2 is ×3, not ×2.5 — the deep end of a branch has to be worth
-    // saving for, and additive stacking would flatten it.
-    expect(modsFromPerks(['updraft-1', 'updraft-2']).output).toBe(3);
+  it('applies a perk once per rank', () => {
+    const factor = (getPerk('updraft-1')!.effect as { factor: number }).factor;
+    expect(modsFromPerks({ 'updraft-1': 3 }).output).toBeCloseTo(factor ** 3, 10);
   });
 
-  it('takes the best discount rather than stacking them toward zero', () => {
-    const mods = modsFromPerks(['craft-1', 'craft-2', 'craft-3']);
-    expect(mods.cost).toBe(0.6);
+  it('stacks different perks multiplicatively', () => {
+    const one = modsFromPerks({ 'updraft-1': 2 }).output;
+    const two = modsFromPerks({ 'updraft-2': 1 }).output;
+    expect(modsFromPerks({ 'updraft-1': 2, 'updraft-2': 1 }).output).toBeCloseTo(
+      one * two,
+      10,
+    );
   });
 
-  it('adds streak-cap perks together', () => {
-    expect(modsFromPerks(['discipline-1', 'discipline-2']).streakCap).toBe(30);
+  it('adds streak-cap ranks together', () => {
+    expect(modsFromPerks({ 'discipline-1': 3 }).streakCap).toBe(15);
+  });
+
+  it('counts a rank past the cap as the cap', () => {
+    const cap = getPerk('ledger-1')!.maxRank!;
+    expect(modsFromPerks({ 'ledger-1': cap + 5 }).review).toBeCloseTo(
+      modsFromPerks({ 'ledger-1': cap }).review,
+      10,
+    );
+  });
+
+  it('picks the foothold step for the rank owned', () => {
+    expect(modsFromPerks({ 'craft-4': 1 }).foothold).toEqual({ count: 3, level: 10 });
+    expect(modsFromPerks({ 'craft-4': 3 }).foothold).toEqual({ count: 5, level: 25 });
+  });
+
+  it('reaches the mote multiplier through the full save mods too', () => {
+    const state = stateWith({ perkRanks: { 'keen-eye': 2 } });
+    expect(modsFor(state).research.mote).toBeGreaterThan(1);
   });
 
   it('ignores perks that no longer exist', () => {
-    expect(modsFromPerks(['a-perk-that-was-renamed'])).toEqual(NO_MODS);
+    expect(modsFromPerks({ 'a-perk-that-was-renamed': 4 })).toEqual(NO_MODS);
   });
 });
 
@@ -80,19 +126,27 @@ describe('totalAetherFor', () => {
   it('pays nothing for nothing', () => {
     expect(totalAetherFor(0)).toBe(0);
     expect(totalAetherFor(-100)).toBe(0);
+    expect(totalAetherFor(1e6)).toBe(0);
   });
 
-  it('rises with lifetime earnings, but far more slowly', () => {
+  it('grows with the order of magnitude, not with the Lumen itself', () => {
+    // The whole point of the log: a million times richer is a few times more
+    // Aether, never a million times — or even a hundred.
     const at = (lumen: number) => totalAetherFor(lumen);
-    expect(at(1e8)).toBeGreaterThan(at(1e7));
-    // A thousand times richer is worth ten times the Aether, not a thousand.
-    // Measured up the curve, where the floor is no longer a big share of it.
-    expect(at(1e13) / at(1e10)).toBeCloseTo(10, 0);
+    expect(at(1e10)).toBeGreaterThan(5);
+    expect(at(1e16) / at(1e10)).toBeLessThan(10);
+    expect(at(1e30)).toBeLessThan(500);
+  });
+
+  it('pays a little more for each order than for the one before', () => {
+    const step = (exp: number) =>
+      totalAetherFor(10 ** (exp + 1)) - totalAetherFor(10 ** exp);
+    expect(step(20)).toBeGreaterThan(step(10));
   });
 
   it('never goes backwards', () => {
     let previous = 0;
-    for (let exp = 5; exp <= 15; exp += 0.5) {
+    for (let exp = 5; exp <= 40; exp += 0.5) {
       const value = totalAetherFor(10 ** exp);
       expect(value).toBeGreaterThanOrEqual(previous);
       previous = value;
@@ -102,7 +156,7 @@ describe('totalAetherFor', () => {
 
 describe('pendingAether', () => {
   it('pays only the difference from what has already been granted', () => {
-    const lifetime = 1e9;
+    const lifetime = 1e12;
     const total = totalAetherFor(lifetime);
     expect(pendingAether(stateWith({ lifetimeLumen: lifetime }))).toBe(total);
     expect(
@@ -111,13 +165,20 @@ describe('pendingAether', () => {
   });
 
   it('cannot be farmed by ascending twice over the same earnings', () => {
-    // Ascend at 1e9, then again immediately with nothing new earned.
-    const lifetime = 1e9;
+    const lifetime = 1e12;
     const first = pendingAether(stateWith({ lifetimeLumen: lifetime }));
     const second = pendingAether(
       stateWith({ lifetimeLumen: lifetime, aetherEarned: first }),
     );
     expect(second).toBe(0);
+  });
+
+  it('is raised by the Distillation perk', () => {
+    const plain = pendingAether(stateWith({ lifetimeLumen: 1e15 }));
+    const distilled = pendingAether(
+      stateWith({ lifetimeLumen: 1e15, perkRanks: { distillation: 2 } }),
+    );
+    expect(distilled).toBeGreaterThan(plain);
   });
 
   it('never goes negative if the formula is later retuned downward', () => {
@@ -126,18 +187,27 @@ describe('pendingAether', () => {
 });
 
 describe('canAscend', () => {
-  it('refuses a run that has not earned a whole point of Aether', () => {
+  it(`refuses a run worth fewer than ${MIN_ASCENSION_AETHER} Aether`, () => {
     expect(canAscend(stateWith({ lifetimeLumen: 0 }))).toBe(false);
-    expect(canAscend(stateWith({ lifetimeLumen: 1e9 }))).toBe(true);
+    expect(canAscend(stateWith({ lifetimeLumen: 2e8 }))).toBe(false);
+    expect(canAscend(stateWith({ lifetimeLumen: 1e11 }))).toBe(true);
   });
 });
 
 describe('lumenForNextAether', () => {
-  it('names a target above where the save currently stands', () => {
-    const state = stateWith({ lifetimeLumen: 5e8 });
+  it('names the lifetime at which ascending is first allowed', () => {
+    const state = stateWith({ lifetimeLumen: 5e7 });
     const target = lumenForNextAether(state);
     expect(target).toBeGreaterThan(state.currency.lifetimeLumen);
-    expect(totalAetherFor(target)).toBe(totalAetherFor(5e8) + 1);
+    expect(canAscend(stateWith({ lifetimeLumen: target }))).toBe(true);
+    expect(canAscend(stateWith({ lifetimeLumen: target * 0.98 }))).toBe(false);
+  });
+
+  it('names one more Aether once ascending is already allowed', () => {
+    const state = stateWith({ lifetimeLumen: 1e13 });
+    const pending = pendingAether(state);
+    const target = lumenForNextAether(state);
+    expect(pendingAether(stateWith({ lifetimeLumen: target }))).toBe(pending + 1);
   });
 });
 
@@ -146,16 +216,23 @@ describe('perkStatus', () => {
     count: 0,
     aether: 0,
     aetherEarned: 0,
-    perks: [],
+    perkRanks: {},
     ...patch,
   });
 
-  it('gates a perk behind its prerequisite', () => {
-    expect(perkStatus(getPerk('updraft-2')!, ascension({ aether: 999 }))).toBe('locked');
+  it('gates a perk behind its prerequisite rank', () => {
+    const need = getPerk('updraft-2')!.requires!.rank;
+    expect(
+      perkStatus(
+        getPerk('updraft-2')!,
+        ascension({ aether: 999, perkRanks: { 'updraft-1': need - 1 } }),
+      ),
+    ).toBe('locked');
   });
 
-  it('opens once the prerequisite is owned and the Aether is there', () => {
-    const owned = ascension({ aether: 999, perks: ['updraft-1'] });
+  it('opens once the prerequisite rank is reached and the Aether is there', () => {
+    const need = getPerk('updraft-2')!.requires!.rank;
+    const owned = ascension({ aether: 999, perkRanks: { 'updraft-1': need } });
     expect(perkStatus(getPerk('updraft-2')!, owned)).toBe('available');
   });
 
@@ -165,10 +242,40 @@ describe('perkStatus', () => {
     );
   });
 
-  it('reports what is already learned', () => {
-    expect(perkStatus(getPerk('updraft-1')!, ascension({ perks: ['updraft-1'] }))).toBe(
-      'owned',
+  it('prices by rank, so a perk that was affordable can become too dear', () => {
+    const perk = getPerk('updraft-1')!;
+    const aether = perkRankCost(perk, 0);
+    expect(perkStatus(perk, ascension({ aether }))).toBe('available');
+    expect(perkStatus(perk, ascension({ aether, perkRanks: { 'updraft-1': 6 } }))).toBe(
+      'unaffordable',
     );
+  });
+
+  it('reports a perk at its cap as maxed', () => {
+    const perk = getPerk('updraft-1')!;
+    expect(
+      perkStatus(
+        perk,
+        ascension({ aether: 1e9, perkRanks: { 'updraft-1': perk.maxRank! } }),
+      ),
+    ).toBe('maxed');
+  });
+
+  it('never reports an uncapped perk as maxed', () => {
+    const perk = PERKS.find((entry) => entry.maxRank === null)!;
+    const prereq = perk.requires ? { [perk.requires.id]: perk.requires.rank } : {};
+    expect(
+      perkStatus(
+        perk,
+        ascension({ aether: 0, perkRanks: { ...prereq, [perk.id]: 500 } }),
+      ),
+    ).not.toBe('maxed');
+  });
+
+  it('counts ranks across the tree', () => {
+    expect(
+      totalPerkRanks(ascension({ perkRanks: { 'updraft-1': 3, 'ledger-1': 2 } })),
+    ).toBe(5);
   });
 });
 

@@ -54,7 +54,10 @@ describe('the requirement', () => {
   it('asks for one more kind each time, at the height the last charter allowed', () => {
     expect(charterRequirement(2)).toEqual({ kinds: 3, atLevel: 25 });
     expect(charterRequirement(3)).toEqual({ kinds: 4, atLevel: 50 });
-    expect(charterRequirement(CHARTER_MAX_LEVEL)).toEqual({ kinds: 9, atLevel: 175 });
+    expect(charterRequirement(CHARTER_MAX_LEVEL)).toEqual({
+      kinds: CHARTER_MAX_LEVEL + 1,
+      atLevel: BUILDING_MAX_LEVEL - CHARTER_LEVELS_PER_STEP,
+    });
   });
 
   it('has nothing to ask for outside the range of charters', () => {
@@ -79,26 +82,26 @@ describe('the requirement', () => {
 
 describe('charterProgress', () => {
   it('is not ready until the breadth is there, however much Lumen is on hand', () => {
-    const thin = charterProgress(spread(2, 40), 1, 1000, Number.MAX_SAFE_INTEGER);
+    const thin = charterProgress(spread(2, 40), 1, Number.MAX_SAFE_INTEGER);
     expect(thin.met).toBe(false);
     expect(thin.affordable).toBe(false);
     expect(thin.standing).toBe(2);
   });
 
   it('is ready once the kinds are standing and the Lumen is there', () => {
-    const wide = charterProgress(spread(3, 25), 1, 1000, Number.MAX_SAFE_INTEGER);
+    const wide = charterProgress(spread(3, 25), 1, Number.MAX_SAFE_INTEGER);
     expect(wide.met).toBe(true);
     expect(wide.affordable).toBe(true);
   });
 
   it('is met but unaffordable when the city is broke', () => {
-    const broke = charterProgress(spread(3, 25), 1, 1_000_000, 0);
+    const broke = charterProgress(spread(3, 25), 1, 0);
     expect(broke.met).toBe(true);
     expect(broke.affordable).toBe(false);
   });
 
   it('has nothing left to offer at the last charter', () => {
-    const done = charterProgress(spread(20, 200), CHARTER_MAX_LEVEL, 1000);
+    const done = charterProgress(spread(20, BUILDING_MAX_LEVEL), CHARTER_MAX_LEVEL);
     expect(done.next).toBeNull();
     expect(done.requirement).toBeNull();
     expect(done.met).toBe(false);
@@ -106,9 +109,31 @@ describe('charterProgress', () => {
 });
 
 describe('charterCost', () => {
-  it('scales with the city, with a floor for the opening days', () => {
-    expect(charterCost(0)).toBeGreaterThan(0);
-    expect(charterCost(1e9)).toBeGreaterThan(charterCost(1e6));
+  it('rises with every charter', () => {
+    for (let level = 3; level <= CHARTER_MAX_LEVEL; level += 1) {
+      expect(charterCost(level), `charter ${level}`).toBeGreaterThan(
+        charterCost(level - 1),
+      );
+    }
+  });
+
+  it('is nothing for a charter that cannot be bought', () => {
+    expect(charterCost(1)).toBe(0);
+    expect(charterCost(CHARTER_MAX_LEVEL + 1)).toBe(0);
+  });
+
+  // The Hearth Hall bug: the price was a share of the city's output, so every
+  // Lumen earned toward it — and every building bought to meet its requirement
+  // — raised it again. The price must not know what the city produces.
+  it('does not move as the city grows', () => {
+    const small = charterProgress(spread(3, 25), 1, 0);
+    const huge = charterProgress(
+      [...spread(3, 25), { id: 'anchor-spire', level: 25 }],
+      1,
+      0,
+    );
+    expect(huge.cost).toBe(small.cost);
+    expect(small.cost).toBe(charterCost(2));
   });
 });
 
@@ -119,7 +144,10 @@ describe('charterEarnedBy', () => {
     expect(charterEarnedBy([])).toBe(CHARTER_MIN_LEVEL);
     expect(charterEarnedBy([{ id: 'greenhouse', level: 66 }])).toBe(3);
     expect(buildingCeiling(charterEarnedBy([{ id: 'greenhouse', level: 66 }]))).toBe(75);
-    expect(charterEarnedBy([{ id: 'greenhouse', level: 200 }])).toBe(CHARTER_MAX_LEVEL);
+    expect(charterEarnedBy([{ id: 'greenhouse', level: 200 }])).toBe(8);
+    expect(charterEarnedBy([{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }])).toBe(
+      CHARTER_MAX_LEVEL,
+    );
   });
 
   it('is exact when a building sits right on a step', () => {

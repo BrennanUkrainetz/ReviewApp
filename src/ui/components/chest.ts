@@ -7,6 +7,7 @@
  */
 import { getAchievement } from '@/config/achievements';
 import { getContract } from '@/config/contracts';
+import { getWeekly } from '@/config/weekly';
 import { getCosmetic } from '@/config/shop';
 import type { ReviewOutcome } from '@/state/actions';
 import type { Store } from '@/state/store';
@@ -269,6 +270,12 @@ export function createChestSequence({
         lumenRow(`Contract · ${contract.name}`, reward.contractLumen, { crit: true }),
       );
     }
+    const weekly = reward.weeklyId ? getWeekly(reward.weeklyId) : null;
+    if (weekly && reward.weeklyLumen > 0) {
+      rows.appendChild(
+        lumenRow(`Expedition · ${weekly.name}`, reward.weeklyLumen, { crit: true }),
+      );
+    }
 
     loot.removeAttribute('hidden');
     append(loot, [
@@ -302,6 +309,14 @@ export function createChestSequence({
             { class: 'chest-loot__cinder' },
             el('span', { class: 'chest-loot__cinder-icon', html: iconCinder() }),
             `+${outcome.cinderEarned} Cinder for the full clear`,
+          )
+        : null,
+      outcome.weeklyCinder > 0
+        ? el(
+            'p',
+            { class: 'chest-loot__cinder' },
+            el('span', { class: 'chest-loot__cinder-icon', html: iconCinder() }),
+            `+${outcome.weeklyCinder} Cinder for the week's expedition`,
           )
         : null,
       earned.length > 0

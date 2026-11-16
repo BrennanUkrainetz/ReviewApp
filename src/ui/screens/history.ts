@@ -97,7 +97,11 @@ export function createHistoryScreen(ctx: AppContext): Screen {
     const isToday = date === today();
     const badges: HTMLElement[] = [];
 
-    if (day?.dayOff) badges.push(el('span', { class: 'badge badge--dayoff' }, 'Day off'));
+    if (day?.dayOff) {
+      badges.push(
+        el('span', { class: 'badge badge--dayoff' }, day.warded ? 'Warded' : 'Day off'),
+      );
+    }
     for (const id of REVIEW_IDS) {
       const record = day?.[id];
       if (!record?.completed) continue;
@@ -226,7 +230,9 @@ export function createHistoryScreen(ctx: AppContext): Screen {
                 'li',
                 {
                   class: ['badge-card', has && 'badge-card--earned'],
-                  attrs: { title: has ? entry.detail : `Not earned yet — ${entry.detail}` },
+                  attrs: {
+                    title: has ? entry.detail : `Not earned yet — ${entry.detail}`,
+                  },
                 },
                 el('span', { class: 'badge-card__name' }, entry.name),
                 el('span', { class: 'badge-card__detail' }, entry.detail),

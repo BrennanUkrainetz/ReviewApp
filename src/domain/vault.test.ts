@@ -18,6 +18,7 @@ import {
   currentRate,
   isOverflowing,
   nextWindow,
+  NOMINAL_SECONDS_PER_DAY,
   nominalSeconds,
   openWindow,
   vaultCapacity,
@@ -162,7 +163,9 @@ describe('accrueVault', () => {
 
   it('pays a half-day at the rate the clock says, well under the cap', () => {
     const state = city();
-    const perSecond = cityOutput(state.city.buildings) / 86_400;
+    // Output is spread over the *nominal* day, so a reviewed day fills the vault
+    // by exactly one day's output — not 1.7 of them, as it used to.
+    const perSecond = cityOutput(state.city.buildings) / NOMINAL_SECONDS_PER_DAY;
     // 20:00 to midnight: four hours, none of it work time.
     const evening = accrueVault(
       { ...state, vault: { ...state.vault, accruedThrough: at(20).getTime() } },
@@ -191,7 +194,10 @@ describe('accrueVault', () => {
     const state = city();
     // Overnight and the morning: 16:00 the day before through 08:00.
     const overnight = accrueVault(
-      { ...state, vault: { ...state.vault, accruedThrough: new Date(2026, 6, 21, 16).getTime() } },
+      {
+        ...state,
+        vault: { ...state.vault, accruedThrough: new Date(2026, 6, 21, 16).getTime() },
+      },
       at(8),
     );
     expect(overnight.lumen).toBeLessThan(vaultCapacity(state));
@@ -217,7 +223,10 @@ describe('accrueVault', () => {
 
     const tiny = { ...city(true, 1), vault: { ...city().vault } };
     const oneSecondOn = new Date(at(3).getTime() + 1000);
-    const ticked = accrueVault({ ...tiny, vault: { ...tiny.vault, accruedThrough: at(3).getTime() } }, oneSecondOn);
+    const ticked = accrueVault(
+      { ...tiny, vault: { ...tiny.vault, accruedThrough: at(3).getTime() } },
+      oneSecondOn,
+    );
     expect(ticked.lumen).toBe(0);
   });
 
@@ -286,7 +295,11 @@ describe('accrueVault', () => {
     const full = accrueVault(state, new Date(2026, 7, 22));
     expect(full.lumen).toBe(vaultCapacity(state));
 
-    const collected = { ...full, lumen: 0, accruedThrough: new Date(2026, 7, 22).getTime() };
+    const collected = {
+      ...full,
+      lumen: 0,
+      accruedThrough: new Date(2026, 7, 22).getTime(),
+    };
     const after = accrueVault(
       { ...state, vault: collected },
       new Date(2026, 7, 22, 0, 0, 30),

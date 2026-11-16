@@ -42,6 +42,7 @@ function outcomeOf(reward: Reward): ReviewOutcome {
     advancedStreak: true,
     earnedAchievements: [],
     cinderEarned: 0,
+    weeklyCinder: 0,
   };
 }
 
@@ -75,6 +76,8 @@ describe('chest payout rows', () => {
       bonusLumen: 500,
       contractLumen: 80,
       contractId: 'both-logged',
+      weeklyLumen: 0,
+      weeklyId: null,
       totalLumen: 680,
       cosmeticId: null,
       milestone: { kind: 'big', at: 20 },
@@ -104,6 +107,8 @@ describe('chest payout rows', () => {
       bonusLumen: 0,
       contractLumen: 0,
       contractId: null,
+      weeklyLumen: 0,
+      weeklyId: null,
       totalLumen: 100,
       cosmeticId: null,
       milestone: null,

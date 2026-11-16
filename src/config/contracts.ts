@@ -14,7 +14,7 @@ export interface ContractDef {
   name: string;
   /** Stated as the thing to do, in the imperative. */
   goal: string;
-  /** Share of the day's payout paid when it lands. */
+  /** Share of the city's daily output (at the day's heat) paid when it lands. */
   bonusShare: number;
   /** Whether the day, as recorded, satisfies it. */
   satisfiedBy(day: DayRecord): boolean;
@@ -31,42 +31,42 @@ export const CONTRACTS: ContractDef[] = [
     id: 'both-logged',
     name: 'Round Trip',
     goal: 'Log both reviews today.',
-    bonusShare: 1,
+    bonusShare: 0.3,
     satisfiedBy: (day) => completed(day) === 2,
   },
   {
     id: 'one-full',
     name: 'Clean Sweep',
     goal: 'Full-clear either review.',
-    bonusShare: 0.75,
+    bonusShare: 0.25,
     satisfiedBy: (day) => fullCleared(day) >= 1,
   },
   {
     id: 'both-full',
     name: 'Perfect Day',
     goal: 'Full-clear both reviews.',
-    bonusShare: 2,
+    bonusShare: 0.6,
     satisfiedBy: (day) => fullCleared(day) === 2,
   },
   {
     id: 'morning-full',
     name: 'Early Ascent',
     goal: 'Full-clear the Morning Review.',
-    bonusShare: 1,
+    bonusShare: 0.3,
     satisfiedBy: (day) => day.morning?.tier === 'full',
   },
   {
     id: 'daily-full',
     name: 'Clean Descent',
     goal: 'Full-clear the Daily Review.',
-    bonusShare: 1,
+    bonusShare: 0.3,
     satisfiedBy: (day) => day.daily?.tier === 'full',
   },
   {
     id: 'any-review',
     name: 'Signal Sent',
     goal: 'Log any review today.',
-    bonusShare: 0.4,
+    bonusShare: 0.15,
     satisfiedBy: (day) => completed(day) >= 1,
   },
 ];

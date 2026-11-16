@@ -3,7 +3,7 @@
  * never build a new `AerieState` themselves.
  */
 import { defaultItems } from '@/config/checklists';
-import { getPerk } from '@/config/perks';
+import { getPerk, perkMaxed, perkRankCost } from '@/config/perks';
 import { getResearch } from '@/config/research';
 import { BUILDINGS, getBuilding, getCosmetic } from '@/config/shop';
 import {
@@ -12,16 +12,14 @@ import {
   MOTE_CHAIN_MAX,
   MOTE_CHARGES_PER_REVIEW,
   MOTE_FLOOR_LUMEN,
+  KILN_CINDER_PER_AETHER,
   MOTE_SHARE_OF_OUTPUT,
+  WARD_CINDER_COST,
 } from '@/config/tuning';
 import { isWeekend, today as todayKey } from '@/domain/dates';
 import { newlyEarned } from '@/domain/achievements';
-import { canAscend, modsFor, pendingAether } from '@/domain/ascension';
-import {
-  buildingCeiling,
-  charterEarnedBy,
-  charterProgress,
-} from '@/domain/charter';
+import { canAscend, modsFor, pendingAether, rankOf } from '@/domain/ascension';
+import { buildingCeiling, charterEarnedBy, charterProgress } from '@/domain/charter';
 import { contractBonus, contractFor, contractJustSettled } from '@/domain/contracts';
 import { heatDays, heatMultiplier } from '@/domain/heat';
 import { cinderFor } from '@/domain/research';
@@ -40,8 +38,11 @@ import {
   emptyDay,
   findDay,
   markDayOff,
+  reconcileStreak,
   shouldAdvanceStreak,
 } from '@/domain/streak';
+import { applyMend, mendQuote, wardCapacity } from '@/domain/wards';
+import { weeklyBonus, weeklyFor, weeklyJustSettled } from '@/domain/weekly';
 import { checklistFor, sanitizeItems } from './checklists';
 import type { Store } from './store';
 import type { AerieState, ChecklistItem, DayRecord, ReviewId } from './types';
@@ -58,6 +59,8 @@ export interface ReviewOutcome {
   earnedAchievements: string[];
   /** Cinder this review earned. Zero unless it was a full clear. */
   cinderEarned: number;
+  /** Cinder from finishing the week's expedition on this review, if it did. */
+  weeklyCinder: number;
 }
 
 function upsertDay(history: DayRecord[], day: DayRecord): DayRecord[] {
@@ -80,8 +83,12 @@ function upsertDay(history: DayRecord[], day: DayRecord): DayRecord[] {
  */
 export function syncVault(store: Store, now: Date = new Date()): void {
   store.update((state) => {
-    const vault = accrueVault(state, now);
-    return vault === state.vault ? state : { ...state, vault };
+    // The day boundary is checked here too, since this is what runs on a
+    // timer: a tab left open overnight must still notice a missed day, spend a
+    // ward on it, or offer the mend, without waiting to be reloaded.
+    const reconciled = reconcileStreak(state, todayKey(now));
+    const vault = accrueVault(reconciled, now);
+    return vault === reconciled.vault ? reconciled : { ...reconciled, vault };
   });
 }
 
@@ -200,7 +207,8 @@ export function completeReview(
   // whole days (not the multiplier), so a long combo is worth more per clear.
   const completesPerfectDay =
     score.tier === 'full' &&
-    (reviewId === 'morning' ? dayBefore?.daily?.tier : dayBefore?.morning?.tier) === 'full';
+    (reviewId === 'morning' ? dayBefore?.daily?.tier : dayBefore?.morning?.tier) ===
+      'full';
   const cinderEarned = cinderFor(
     score.tier,
     completesPerfectDay,
@@ -211,14 +219,22 @@ export function completeReview(
   // The contract pays on the review that settles it, and only that one.
   const contract = contractFor(date);
   const settled = contractJustSettled(contract, dayBefore, updatedDay);
-  const heatedBase = Math.round(reviewLumen * heat) + Math.round(passiveLumen * heat);
+  // Contract and expedition bonuses are both shares of the city's day at the
+  // day's heat, scaled by the Compound Interest perk.
+  const heatedOutput = Math.round(passiveLumen * heat * mods.contract);
+  const weekly = weeklyFor(date);
+  const weeklySettled = weeklyJustSettled(weekly, before.history, historyWithToday, date);
+  const weeklyCinder = weeklySettled ? weekly.cinder : 0;
 
   const reward = buildReward({
     reviewLumen,
     passiveLumen,
     heat,
     contract: settled
-      ? { id: contract.id, bonus: contractBonus(contract, heatedBase) }
+      ? { id: contract.id, bonus: contractBonus(contract, heatedOutput) }
+      : null,
+    weekly: weeklySettled
+      ? { id: weekly.id, bonus: weeklyBonus(weekly, heatedOutput) }
       : null,
     milestone: hit,
     unlockedCosmetics: before.city.cosmetics.unlocked,
@@ -249,7 +265,7 @@ export function completeReview(
         lumen: state.currency.lumen + reward.totalLumen,
         runLumen: state.currency.runLumen + reward.totalLumen,
         lifetimeLumen: state.currency.lifetimeLumen + reward.totalLumen,
-        cinder: state.currency.cinder + cinderEarned,
+        cinder: state.currency.cinder + cinderEarned + weeklyCinder,
       },
       milestones,
       // Finishing a review is what opens the mote window. Charges are stamped
@@ -291,6 +307,7 @@ export function completeReview(
     advancedStreak,
     earnedAchievements,
     cinderEarned,
+    weeklyCinder,
   };
 }
 
@@ -358,6 +375,7 @@ export function catchMote(
 export function takeDayOff(store: Store, now: Date = new Date()): void {
   const date = todayKey(now);
   if (isWeekend(date)) return;
+  syncVault(store, now);
   store.update((state) => {
     const day = findDay(state.history, date) ?? emptyDay(date);
     if (day.dayOff) return state;
@@ -462,7 +480,7 @@ export type CharterOutcome = CharterResult | { ok: false; reason: string };
  *
  * Two gates, and the order matters for the message the shop shows. Breadth
  * first, because that is the one a player has to plan around; the Lumen price
- * is a share of the city's own output and is rarely what is missing.
+ * is fixed per charter, so once met it is simply something to save toward.
  *
  * Banks the vault first: a charter lifts the whole city's output the moment it
  * lands, and accrual that happened at the old rate must not be paid at the new
@@ -471,12 +489,9 @@ export type CharterOutcome = CharterResult | { ok: false; reason: string };
 export function buyCharter(store: Store): CharterOutcome {
   syncVault(store);
   const state = store.getState();
-  const mods = modsFor(state);
-  const output = cityOutput(state.city.buildings, mods);
   const progress = charterProgress(
     state.city.buildings,
     state.city.charter,
-    output,
     state.currency.lumen,
   );
 
@@ -562,7 +577,7 @@ export function ascend(store: Store, now: Date = new Date()): AscendOutcome {
       count: current.ascension.count + 1,
       aether: current.ascension.aether + granted,
       aetherEarned: current.ascension.aetherEarned + granted,
-      perks: current.ascension.perks,
+      perkRanks: current.ascension.perkRanks,
     },
     vault: { ...current.vault, accruedThrough: now.getTime(), lumen: 0, carry: 0 },
     city: (() => {
@@ -607,29 +622,35 @@ export function creditAchievements(store: Store): string[] {
   return earned;
 }
 
-/** Spends Aether on a perk. Permanent — perks are never refunded or lost. */
+/**
+ * Spends Aether on the next rank of a perk. Permanent — perks are never
+ * refunded or lost.
+ */
 export function buyPerk(store: Store, perkId: string): PurchaseResult {
   const def = getPerk(perkId);
   if (!def) return { ok: false, reason: 'Unknown perk.' };
 
+  syncVault(store);
   const state = store.getState();
-  const { perks, aether } = state.ascension;
+  const { perkRanks, aether } = state.ascension;
+  const rank = rankOf(perkRanks, perkId);
 
-  if (perks.includes(perkId)) return { ok: false, reason: 'Already learned.' };
-  if (def.requires && !perks.includes(def.requires)) {
+  if (perkMaxed(def, rank)) return { ok: false, reason: 'Already at its highest rank.' };
+  if (def.requires && rankOf(perkRanks, def.requires.id) < def.requires.rank) {
     return {
       ok: false,
-      reason: `${getPerk(def.requires)?.name ?? 'Something else'} comes first.`,
+      reason: `${getPerk(def.requires.id)?.name ?? 'Something else'} needs rank ${def.requires.rank} first.`,
     };
   }
-  if (aether < def.cost) return { ok: false, reason: 'Not enough Aether.' };
+  const cost = perkRankCost(def, rank);
+  if (aether < cost) return { ok: false, reason: 'Not enough Aether.' };
 
   store.update((current) => ({
     ...current,
     ascension: {
       ...current.ascension,
-      aether: current.ascension.aether - def.cost,
-      perks: [...current.ascension.perks, perkId],
+      aether: current.ascension.aether - cost,
+      perkRanks: { ...current.ascension.perkRanks, [perkId]: rank + 1 },
     },
   }));
 
@@ -668,6 +689,108 @@ export function buyResearch(store: Store, researchId: string): PurchaseResult {
       cinder: current.currency.cinder - def.cost,
     },
     research: [...current.research, researchId],
+  }));
+
+  creditAchievements(store);
+  return { ok: true };
+}
+
+/**
+ * Buys a streak ward with Cinder. Refused at capacity — a ward held beyond it
+ * would never be spendable, since a gap longer than capacity breaks the run.
+ */
+export function buyWard(store: Store, now: Date = new Date()): PurchaseResult {
+  syncVault(store, now);
+  const state = store.getState();
+  const capacity = wardCapacity(modsFor(state));
+
+  if (state.streak.wards >= capacity) {
+    return {
+      ok: false,
+      reason:
+        capacity === 1
+          ? 'You already hold a ward.'
+          : `You already hold ${capacity} wards.`,
+    };
+  }
+  if (state.currency.cinder < WARD_CINDER_COST) {
+    return { ok: false, reason: 'Not enough Cinder.' };
+  }
+
+  store.update((current) => ({
+    ...current,
+    currency: { ...current.currency, cinder: current.currency.cinder - WARD_CINDER_COST },
+    streak: { ...current.streak, wards: current.streak.wards + 1 },
+  }));
+
+  creditAchievements(store);
+  return { ok: true };
+}
+
+export interface MendResult {
+  ok: true;
+  /** The streak after mending. */
+  streak: number;
+}
+
+/**
+ * Mends the most recently broken run, paying in Cinder or Aether. The quote is
+ * rebuilt here rather than trusted from the screen, so a stale button can never
+ * charge the wrong price or mend a run whose window has closed.
+ */
+export function mendStreak(
+  store: Store,
+  currency: 'cinder' | 'aether',
+  now: Date = new Date(),
+): MendResult | { ok: false; reason: string } {
+  syncVault(store, now);
+  const state = store.getState();
+  const quote = mendQuote(state, todayKey(now), modsFor(state));
+  if (!quote) return { ok: false, reason: 'There is no broken run to mend.' };
+
+  const price = currency === 'cinder' ? quote.cinder : quote.aether;
+  const held = currency === 'cinder' ? state.currency.cinder : state.ascension.aether;
+  if (held < price) {
+    return {
+      ok: false,
+      reason: `Not enough ${currency === 'cinder' ? 'Cinder' : 'Aether'}.`,
+    };
+  }
+
+  store.update((current) => {
+    const paid =
+      currency === 'cinder'
+        ? {
+            ...current,
+            currency: { ...current.currency, cinder: current.currency.cinder - price },
+          }
+        : {
+            ...current,
+            ascension: { ...current.ascension, aether: current.ascension.aether - price },
+          };
+    return applyMend(paid, quote);
+  });
+
+  creditAchievements(store);
+  return { ok: true, streak: quote.restored };
+}
+
+/**
+ * Burns Cinder into Aether at the kiln. The Aether is spendable at once but is
+ * deliberately *not* counted in `aetherEarned`: that total is what the next
+ * ascension's grant is struck against, and kiln Aether must not eat into it.
+ */
+export function fireKiln(store: Store, batches = 1): PurchaseResult {
+  const count = Math.max(1, Math.floor(batches));
+  const cost = count * KILN_CINDER_PER_AETHER;
+  if (store.getState().currency.cinder < cost) {
+    return { ok: false, reason: 'Not enough Cinder.' };
+  }
+
+  store.update((current) => ({
+    ...current,
+    currency: { ...current.currency, cinder: current.currency.cinder - cost },
+    ascension: { ...current.ascension, aether: current.ascension.aether + count },
   }));
 
   creditAchievements(store);

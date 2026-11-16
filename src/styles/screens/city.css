@@ -124,6 +124,60 @@
   text-wrap: pretty;
 }
 
+.city-day__meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.city-day__item .btn {
+  margin-top: var(--space-1);
+  align-self: flex-start;
+}
+
+.city-day__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.city-day__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* The mend offer: the one thing on the city screen with a deadline, so it
+   sits above the vault and is tinted to be seen. */
+.city-mend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 10%, var(--color-surface));
+}
+
+.city-mend[hidden] {
+  display: none;
+}
+
+.city-mend__title {
+  font-weight: 500;
+}
+
+.city-mend__body {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
+.city-mend__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 /* Motes: layered over the scene, never inside it. See components/motes.ts for
    why they are DOM rather than SVG. */
 .mote-field {
@@ -246,7 +300,9 @@ html[data-reduce-motion='true'] .mote {
 
 .vault--open {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-glow), var(--shadow-md);
+  box-shadow:
+    0 0 0 1px var(--color-glow),
+    var(--shadow-md);
 }
 
 .vault__head {

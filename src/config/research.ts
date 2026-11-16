@@ -17,7 +17,7 @@
  */
 import type { CollectionWindow } from './tuning';
 
-export type ResearchBranch = 'vault' | 'furnace' | 'ember';
+export type ResearchBranch = 'vault' | 'furnace' | 'ember' | 'watch';
 
 export type ResearchEffect =
   /** Multiplies the vault's ceiling. Tiers supersede: the best is used. */
@@ -37,7 +37,11 @@ export type ResearchEffect =
   /** Added to `HEAT_CAP_DAYS`. Best wins. */
   | { kind: 'heat-cap'; extra: number }
   /** Multiplies what a mote is worth. Stacks. */
-  | { kind: 'mote'; factor: number };
+  | { kind: 'mote'; factor: number }
+  /** Extra streak wards that can be held at once. Stacks. */
+  | { kind: 'ward-slots'; extra: number }
+  /** Scales what mending a broken run costs. Best wins. */
+  | { kind: 'mend-cost'; factor: number };
 
 export interface ResearchDef {
   id: string;
@@ -61,6 +65,11 @@ export const RESEARCH_BRANCHES: {
   { id: 'vault', name: 'The Vault', blurb: 'How much it holds, and when it opens.' },
   { id: 'furnace', name: 'The Furnace', blurb: 'How fast it fills.' },
   { id: 'ember', name: 'Embers', blurb: 'What a well-run day is worth.' },
+  {
+    id: 'watch',
+    name: 'The Watch',
+    blurb: 'Keeping the run alive on the days you cannot.',
+  },
 ];
 
 export const RESEARCH: ResearchDef[] = [
@@ -155,49 +164,49 @@ export const RESEARCH: ResearchDef[] = [
     id: 'draught-1',
     name: 'Banked Coals',
     branch: 'furnace',
-    detail: 'The vault fills 1.3× faster, around the clock.',
+    detail: 'The vault fills 1.15× faster, around the clock.',
     flavor: 'Never quite out, never quite roaring.',
     cost: 18,
-    effect: { kind: 'vault-rate', factor: 1.3 },
+    effect: { kind: 'vault-rate', factor: 1.15 },
   },
   {
     id: 'draught-2',
     name: 'Forced Draught',
     branch: 'furnace',
-    detail: 'The vault fills 1.6× faster again.',
+    detail: 'The vault fills 1.25× faster again.',
     flavor: 'The wind up here was always going to be useful for something.',
     cost: 80,
     requires: 'draught-1',
-    effect: { kind: 'vault-rate', factor: 1.6 },
+    effect: { kind: 'vault-rate', factor: 1.25 },
   },
   {
     id: 'draught-3',
     name: 'Blast Furnace',
     branch: 'furnace',
-    detail: 'The vault fills 2× faster again.',
+    detail: 'The vault fills 1.4× faster again.',
     flavor: 'You can read by it from the east island.',
     cost: 220,
     requires: 'draught-2',
-    effect: { kind: 'vault-rate', factor: 2 },
+    effect: { kind: 'vault-rate', factor: 1.4 },
   },
   {
     id: 'shift-1',
     name: 'Shift Bonus',
     branch: 'furnace',
-    detail: 'Work hours fill the vault ×4 instead of ×3.',
+    detail: 'Work hours fill the vault ×3.5 instead of ×3.',
     flavor: 'Paid properly for the hours you are not here.',
     cost: 120,
-    effect: { kind: 'work-rate', value: 4 },
+    effect: { kind: 'work-rate', value: 3.5 },
   },
   {
     id: 'shift-2',
     name: 'Double Shift',
     branch: 'furnace',
-    detail: 'Work hours fill the vault ×5.',
+    detail: 'Work hours fill the vault ×4.',
     flavor: 'The city does its best work while you are doing yours.',
     cost: 280,
     requires: 'shift-1',
-    effect: { kind: 'work-rate', value: 5 },
+    effect: { kind: 'work-rate', value: 4 },
   },
 
   /* Embers — the routine feeding itself. */
@@ -205,20 +214,20 @@ export const RESEARCH: ResearchDef[] = [
     id: 'hot-1',
     name: 'Hot Work',
     branch: 'ember',
-    detail: 'Full clears earn 1.5× Cinder.',
+    detail: 'Full clears earn 1.25× Cinder.',
     flavor: 'Do it properly and it burns hotter. That is all there is to it.',
     cost: 35,
-    effect: { kind: 'cinder', factor: 1.5 },
+    effect: { kind: 'cinder', factor: 1.25 },
   },
   {
     id: 'hot-2',
     name: 'Crucible',
     branch: 'ember',
-    detail: 'Full clears earn 2× Cinder again.',
+    detail: 'Full clears earn 1.5× Cinder again.',
     flavor: 'What comes out is worth more than what went in.',
     cost: 160,
     requires: 'hot-1',
-    effect: { kind: 'cinder', factor: 2 },
+    effect: { kind: 'cinder', factor: 1.5 },
   },
   {
     id: 'slow-burn',
@@ -237,6 +246,36 @@ export const RESEARCH: ResearchDef[] = [
     flavor: 'Same motes. They just seem to matter more lately.',
     cost: 30,
     effect: { kind: 'mote', factor: 2 },
+  },
+
+  /* The Watch — streak insurance. See `domain/wards.ts`. */
+  {
+    id: 'watch-1',
+    name: 'Night Watch',
+    branch: 'watch',
+    detail: 'Hold one more streak ward at a time.',
+    flavor: 'Somebody is always awake up here. Now it is on purpose.',
+    cost: 60,
+    effect: { kind: 'ward-slots', extra: 1 },
+  },
+  {
+    id: 'watch-2',
+    name: 'Standing Watch',
+    branch: 'watch',
+    detail: 'Hold one more streak ward again.',
+    flavor: 'Shifts, a rota, and a kettle that is never cold.',
+    cost: 180,
+    requires: 'watch-1',
+    effect: { kind: 'ward-slots', extra: 1 },
+  },
+  {
+    id: 'mending',
+    name: "Mender's Kit",
+    branch: 'watch',
+    detail: 'Mending a broken run costs half as much.',
+    flavor: 'Rope, pitch, and the patience to use them.',
+    cost: 120,
+    effect: { kind: 'mend-cost', factor: 0.5 },
   },
 ];
 

@@ -55,6 +55,28 @@ export interface DayRecord {
   morning: ReviewRecord | null;
   daily: ReviewRecord | null;
   dayOff: boolean;
+  /**
+   * Set when a streak ward or a mend covered this day rather than you. Always
+   * paired with `dayOff: true`, so every rule that reads days off — the streak,
+   * heat, achievements — treats a warded day exactly as one; this flag only
+   * lets history say which it was.
+   */
+  warded?: boolean;
+}
+
+/**
+ * A run that broke, kept for a few days so it can be mended. See
+ * `domain/wards.ts`.
+ */
+export interface BrokenRun {
+  /** The streak it had reached. */
+  length: number;
+  /** The last day that kept it going. */
+  lastActiveDate: string;
+  /** The day the break was noticed — the mend window counts from here. */
+  brokenOn: string;
+  /** Milestone bookkeeping as it stood, so a mended run picks up where it was. */
+  milestones: MilestoneState;
 }
 
 export interface StreakState {
@@ -65,6 +87,14 @@ export interface StreakState {
   /** Last day that kept continuity — a qualifying completion *or* a day off. */
   lastActiveDate: string | null;
   daysOffUsed: number;
+  /** Streak wards held — each covers one missed weekday automatically. */
+  wards: number;
+  /** Wards that have been spent covering a day, ever. */
+  wardsUsed: number;
+  /** Broken runs mended, ever. */
+  mendsUsed: number;
+  /** The run that most recently broke, while it can still be mended. */
+  broken: BrokenRun | null;
 }
 
 export interface MilestoneState {
@@ -103,8 +133,11 @@ export interface AscensionState {
   aether: number;
   /** Aether ever granted, so the next grant is a difference, not a repeat. */
   aetherEarned: number;
-  /** Ids of purchased perks. Permanent — these are what survive a reset. */
-  perks: string[];
+  /**
+   * Rank owned of each perk, by id. Permanent — these are what survive a reset.
+   * A perk absent from the map is rank 0.
+   */
+  perkRanks: Record<string, number>;
 }
 
 export interface OwnedBuilding {

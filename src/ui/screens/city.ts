@@ -4,13 +4,16 @@
  * Everything else is entered from here and returns here.
  */
 import { CHECKLIST_META, REVIEW_IDS } from '@/config/checklists';
-import { isWeekend, today } from '@/domain/dates';
-import { canAscend } from '@/domain/ascension';
+import { WARD_CINDER_COST } from '@/config/tuning';
+import { formatShortDay, isWeekend, today } from '@/domain/dates';
+import { canAscend, modsFor } from '@/domain/ascension';
 import { contractFor } from '@/domain/contracts';
 import { describeHeat, heatDays } from '@/domain/heat';
 import { findDay } from '@/domain/streak';
-import { takeDayOff } from '@/state/actions';
-import type { DayRecord, ReviewId } from '@/state/types';
+import { mendQuote, wardCapacity } from '@/domain/wards';
+import { weeklyFor, weeklyProgress } from '@/domain/weekly';
+import { buyWard, mendStreak, takeDayOff } from '@/state/actions';
+import type { AerieState, DayRecord, ReviewId } from '@/state/types';
 import { confirmDialog } from '../components/confirm';
 import { createLightingCaption } from '../components/lighting-caption';
 import { createMoteField, moteCaughtMessage } from '../components/motes';
@@ -20,6 +23,7 @@ import { el, replaceChildren } from '../dom';
 import {
   iconAether,
   iconCheck,
+  iconCinder,
   iconDayOff,
   iconHistory,
   iconSettings,
@@ -39,6 +43,7 @@ export function createCityScreen(ctx: AppContext): Screen {
   );
   const stage = el('figure', { class: 'city-stage' }, scene.el, motes.el, caption.el);
   const statusLine = el('p', { class: 'city-status' });
+  const mendBar = el('div', { class: 'city-mend' });
   const dayBar = el('div', { class: 'city-day' });
   const primaryActions = el('div', { class: 'action-rail' });
   const secondaryActions = el('div', { class: 'action-rail__secondary' });
@@ -51,6 +56,7 @@ export function createCityScreen(ctx: AppContext): Screen {
       'div',
       { class: 'city-controls' },
       statusLine,
+      mendBar,
       vault.el,
       dayBar,
       primaryActions,
@@ -63,13 +69,13 @@ export function createCityScreen(ctx: AppContext): Screen {
    * not they are currently paying — a contract you have already settled and a
    * combo you are about to lose are both worth knowing about.
    */
-  function renderDayBar(
-    state: ReturnType<typeof ctx.store.getState>,
-    day: DayRecord | undefined,
-  ): void {
+  function renderDayBar(state: AerieState, day: DayRecord | undefined): void {
     const contract = contractFor(today());
     const settled = day ? contract.satisfiedBy(day) : false;
     const heat = heatDays(state.history, today());
+    const weekly = weeklyFor(today());
+    const progress = weeklyProgress(weekly, state.history, today());
+    const weekDone = progress >= weekly.target;
 
     replaceChildren(
       dayBar,
@@ -89,6 +95,130 @@ export function createCityScreen(ctx: AppContext): Screen {
         el('span', { class: 'city-day__label' }, 'Heat'),
         el('span', { class: 'city-day__value' }, describeHeat(heat)),
       ),
+      el(
+        'div',
+        { class: ['city-day__item', weekDone && 'city-day__item--done'] },
+        el(
+          'span',
+          { class: 'city-day__label' },
+          weekDone ? 'Expedition complete' : "This week's expedition",
+        ),
+        el('span', { class: 'city-day__value' }, `${weekly.name} — ${weekly.goal}`),
+        el(
+          'span',
+          { class: 'city-day__meta' },
+          weekDone
+            ? `${weekly.target} / ${weekly.target} · paid`
+            : `${progress} / ${weekly.target} · pays ${weekly.cinder} Cinder and a day of the city`,
+        ),
+      ),
+      wardItem(state),
+    );
+  }
+
+  /**
+   * Streak wards: how many are held, and the button to buy another. Shown once
+   * Cinder has turned up at all — the same point the Workshop appears — since
+   * before that there is nothing to buy one with.
+   */
+  function wardItem(state: AerieState): HTMLElement | null {
+    const { wards, wardsUsed } = state.streak;
+    if (state.currency.cinder <= 0 && wards <= 0 && wardsUsed <= 0) return null;
+
+    const capacity = wardCapacity(modsFor(state));
+    const full = wards >= capacity;
+    const affordable = state.currency.cinder >= WARD_CINDER_COST;
+
+    return el(
+      'div',
+      { class: ['city-day__item', wards > 0 && 'city-day__item--done'] },
+      el('span', { class: 'city-day__label' }, 'Streak wards'),
+      el(
+        'span',
+        { class: 'city-day__value' },
+        wards > 0
+          ? `${wards} of ${capacity} held — a missed weekday is covered automatically.`
+          : 'None held. A ward covers a weekday you forget, automatically.',
+      ),
+      el(
+        'button',
+        {
+          class: [
+            'btn',
+            'btn--small',
+            !full && affordable ? 'btn--buy' : 'btn--secondary',
+          ],
+          attrs: { type: 'button', disabled: full || !affordable },
+          on: {
+            click: () => {
+              const result = buyWard(ctx.store);
+              ctx.toast(
+                result.ok ? 'Ward bought. Your streak has a net.' : result.reason,
+              );
+            },
+          },
+        },
+        el('span', { class: 'city-day__icon', html: iconCinder() }),
+        full ? 'Wards full' : `Buy a ward · ${WARD_CINDER_COST} Cinder`,
+      ),
+    );
+  }
+
+  /**
+   * The mend offer. Only there while a broken run can still be saved, and put
+   * above everything else on the screen — it is the one thing here with a
+   * deadline, and missing it is the one mistake that cannot be undone.
+   */
+  function renderMend(state: AerieState): void {
+    const quote = mendQuote(state, today(), modsFor(state));
+    mendBar.hidden = quote === null;
+    if (!quote) {
+      replaceChildren(mendBar);
+      return;
+    }
+
+    const payWith = (currency: 'cinder' | 'aether'): HTMLElement => {
+      const price = currency === 'cinder' ? quote.cinder : quote.aether;
+      const held = currency === 'cinder' ? state.currency.cinder : state.ascension.aether;
+      const affordable = held >= price;
+      return el(
+        'button',
+        {
+          class: ['btn', 'btn--small', affordable ? 'btn--buy' : 'btn--secondary'],
+          attrs: { type: 'button', disabled: !affordable },
+          on: {
+            click: () => {
+              const result = mendStreak(ctx.store, currency);
+              ctx.toast(
+                result.ok
+                  ? `Mended. Your streak is back at ${result.streak}.`
+                  : result.reason,
+              );
+            },
+          },
+        },
+        el('span', {
+          class: 'city-day__icon',
+          html: currency === 'cinder' ? iconCinder() : iconAether(),
+        }),
+        `${price} ${currency === 'cinder' ? 'Cinder' : 'Aether'}`,
+      );
+    };
+
+    const missed = quote.days.length;
+    replaceChildren(
+      mendBar,
+      el(
+        'div',
+        { class: 'city-mend__text' },
+        el('p', { class: 'city-mend__title' }, `Your ${quote.length}-day run broke.`),
+        el(
+          'p',
+          { class: 'city-mend__body' },
+          `Mend it to cover the ${missed === 1 ? 'missed day' : `${missed} missed days`} and put your streak back at ${quote.restored}. The offer stands until ${formatShortDay(quote.deadline)}.`,
+        ),
+      ),
+      el('div', { class: 'city-mend__actions' }, payWith('cinder'), payWith('aether')),
     );
   }
 
@@ -193,6 +323,7 @@ export function createCityScreen(ctx: AppContext): Screen {
       state.streak.current,
       weekend,
     );
+    renderMend(state);
     renderDayBar(state, day);
   }
 

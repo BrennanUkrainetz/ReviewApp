@@ -7,8 +7,12 @@ import {
   HEAT_PER_DAY,
   MOTE_CHARGES_PER_REVIEW,
   MOTE_FLOOR_LUMEN,
+  KILN_CINDER_PER_AETHER,
+  WARD_CINDER_COST,
 } from '@/config/tuning';
-import { addDays, addWeekdays } from '@/domain/dates';
+import { getWeekly } from '@/config/weekly';
+import { weeklyFor } from '@/domain/weekly';
+import { addDays, addWeekdays, toDateKey } from '@/domain/dates';
 import { buildingCeiling } from '@/domain/charter';
 import { buildingCost, cityOutput } from '@/domain/economy';
 import type { Rng } from '@/domain/rewards';
@@ -29,6 +33,9 @@ import {
   syncVault,
   takeDayOff,
   buyResearch,
+  buyWard,
+  fireKiln,
+  mendStreak,
 } from './actions';
 import { createInitialState } from './defaults';
 import { setStorageBackend } from './storage';
@@ -205,15 +212,15 @@ describe('completeReview', () => {
     // The point of the change: past the flat floor, a city worth ten times
     // more opens a chest worth ten times more, rather than the same handful of
     // Lumen it paid on day one.
-    const modest = payoutWith(20);
-    const large = payoutWith(60);
+    const modest = payoutWith(40);
+    const large = payoutWith(80);
     const outputRatio =
-      cityOutput([{ id: 'greenhouse', level: 60 }]) /
-      cityOutput([{ id: 'greenhouse', level: 20 }]);
-    expect(large / modest).toBeCloseTo(outputRatio, 1);
+      cityOutput([{ id: 'greenhouse', level: 80 }]) /
+      cityOutput([{ id: 'greenhouse', level: 40 }]);
+    expect(large / modest / outputRatio).toBeCloseTo(1, 2);
     // ...and it is a real share of what the city makes in a day, not a rounding
     // error beside it.
-    expect(large).toBeGreaterThan(cityOutput([{ id: 'greenhouse', level: 60 }]) / 4);
+    expect(large).toBeGreaterThan(cityOutput([{ id: 'greenhouse', level: 80 }]) / 8);
     // A brand new city still gets the flat rate as a floor.
     expect(payoutWith(0)).toBeGreaterThan(0);
   });
@@ -470,8 +477,16 @@ describe('ascend', () => {
     const base = createInitialState();
     return makeStore({
       ...base,
-      currency: { lumen: 50_000, runLumen: 2e9, lifetimeLumen: 2e9 , cinder: 0},
-      streak: { ...base.streak, current: 14, longest: 14, daysOffUsed: 3 },
+      currency: { lumen: 50_000, runLumen: 2e9, lifetimeLumen: 2e9, cinder: 0 },
+      // Active today, so the day check that now rides along with every action
+      // finds nothing missed and leaves the run alone.
+      streak: {
+        ...base.streak,
+        current: 14,
+        longest: 14,
+        daysOffUsed: 3,
+        lastActiveDate: toDateKey(new Date()),
+      },
       milestones: { ...base.milestones, totalBigMilestonesHit: 2 },
       city: {
         buildings: [
@@ -539,7 +554,7 @@ describe('ascend', () => {
         count: 0,
         aether: 0,
         aetherEarned: 0,
-        perks: ['discipline-4', 'craft-4'],
+        perkRanks: { 'discipline-3': 2, 'craft-4': 1 },
       },
       ...{ city: { ...base.city, buildings: [{ id: 'greenhouse', level: 12 }] } },
     });
@@ -547,38 +562,52 @@ describe('ascend', () => {
     ascend(store);
     const state = store.getState();
 
-    expect(state.currency.lumen).toBe(5_000); // 10% of 50,000
+    expect(state.currency.lumen).toBe(5_000); // 2 ranks × 5% of 50,000
     expect(state.city.buildings).toEqual([
-      { id: 'greenhouse', level: 5 },
-      { id: 'windmill', level: 5 },
-      { id: 'market-stall', level: 5 },
+      { id: 'greenhouse', level: 10 },
+      { id: 'windmill', level: 10 },
+      { id: 'market-stall', level: 10 },
     ]);
   });
 
   it('keeps perks, and their effects, across the reset', () => {
     const store = readyToAscend({
-      ascension: { count: 0, aether: 0, aetherEarned: 0, perks: ['updraft-1'] },
+      ascension: { count: 0, aether: 0, aetherEarned: 0, perkRanks: { 'updraft-1': 2 } },
     });
     ascend(store);
-    expect(store.getState().ascension.perks).toEqual(['updraft-1']);
+    expect(store.getState().ascension.perkRanks).toEqual({ 'updraft-1': 2 });
   });
 });
 
 describe('buyPerk', () => {
-  const withAether = (aether: number, perks: string[] = []): Store =>
-    makeStore({ ascension: { count: 1, aether, aetherEarned: aether, perks } });
+  const withAether = (aether: number, perkRanks: Record<string, number> = {}): Store =>
+    makeStore({ ascension: { count: 1, aether, aetherEarned: aether, perkRanks } });
 
-  it('spends the Aether and learns the perk', () => {
+  it('spends the Aether and raises the perk a rank', () => {
     const store = withAether(5);
     expect(buyPerk(store, 'updraft-1')).toEqual({ ok: true });
-    expect(store.getState().ascension).toMatchObject({ aether: 4, perks: ['updraft-1'] });
+    expect(store.getState().ascension).toMatchObject({
+      aether: 4,
+      perkRanks: { 'updraft-1': 1 },
+    });
   });
 
-  it('refuses without the prerequisite', () => {
-    const store = withAether(99);
+  it('charges more for each rank than the last', () => {
+    const store = withAether(100);
+    buyPerk(store, 'updraft-1');
+    const afterFirst = store.getState().ascension.aether;
+    buyPerk(store, 'updraft-1');
+    buyPerk(store, 'updraft-1');
+    const afterThird = store.getState().ascension.aether;
+    expect(100 - afterFirst).toBeLessThan((afterFirst - afterThird) / 2 + 1);
+    expect(store.getState().ascension.perkRanks['updraft-1']).toBe(3);
+  });
+
+  it('refuses without the prerequisite rank', () => {
+    const store = withAether(99, { 'updraft-1': 1 });
     expect(buyPerk(store, 'updraft-2')).toEqual({
       ok: false,
-      reason: 'Rising Thermals comes first.',
+      reason: 'Rising Thermals needs rank 3 first.',
     });
   });
 
@@ -588,16 +617,16 @@ describe('buyPerk', () => {
       ok: false,
       reason: 'Not enough Aether.',
     });
-    expect(store.getState().ascension.perks).toEqual([]);
+    expect(store.getState().ascension.perkRanks).toEqual({});
   });
 
-  it('will not buy the same perk twice', () => {
-    const store = withAether(99, ['updraft-1']);
-    expect(buyPerk(store, 'updraft-1')).toEqual({
+  it('will not raise a perk past its highest rank', () => {
+    const store = withAether(9999, { 'ledger-1': 5 });
+    expect(buyPerk(store, 'ledger-1')).toEqual({
       ok: false,
-      reason: 'Already learned.',
+      reason: 'Already at its highest rank.',
     });
-    expect(store.getState().ascension.aether).toBe(99);
+    expect(store.getState().ascension.aether).toBe(9999);
   });
 });
 
@@ -615,7 +644,7 @@ describe('perk effects reach the payout', () => {
         count: 1,
         aether: 0,
         aetherEarned: 4,
-        perks: ['updraft-1', 'ledger-1'],
+        perkRanks: { 'updraft-1': 1, 'ledger-1': 1 },
       },
     });
 
@@ -626,15 +655,17 @@ describe('perk effects reach the payout', () => {
     });
 
     // Within a Lumen: both sides round once, at different points in the sum.
-    expect(b.reward.reviewLumen).toBeCloseTo(a.reward.reviewLumen * 1.5, -0.5);
-    expect(b.reward.passiveLumen).toBeCloseTo(a.reward.passiveLumen * 1.5, -0.5);
+    expect(b.reward.passiveLumen).toBeCloseTo(a.reward.passiveLumen * 1.15, -0.5);
+    expect(b.reward.reviewLumen).toBeGreaterThan(a.reward.reviewLumen);
   });
 
   it('discounts buildings with a Craft perk', () => {
-    const full = makeStore({ currency: { lumen: 1e9, runLumen: 0, lifetimeLumen: 0 , cinder: 0} });
+    const full = makeStore({
+      currency: { lumen: 1e9, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+    });
     const discounted = makeStore({
-      currency: { lumen: 1e9, runLumen: 0, lifetimeLumen: 0 , cinder: 0},
-      ascension: { count: 1, aether: 0, aetherEarned: 2, perks: ['craft-1'] },
+      currency: { lumen: 1e9, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      ascension: { count: 1, aether: 0, aetherEarned: 2, perkRanks: { 'craft-1': 1 } },
     });
 
     const a = buyBuilding(full, 'greenhouse');
@@ -711,7 +742,7 @@ describe('shop actions', () => {
 
   it('buys, then upgrades at the escalating cost', () => {
     const store = makeStore({
-      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000 , cinder: 0},
+      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000, cinder: 0 },
     });
     const first = buildingCost(greenhouse, 0);
     const second = buildingCost(greenhouse, 1);
@@ -728,10 +759,10 @@ describe('shop actions', () => {
 
   it('buys ten levels for the same price as ten single purchases', () => {
     const bulk = makeStore({
-      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000 , cinder: 0},
+      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000, cinder: 0 },
     });
     const single = makeStore({
-      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000 , cinder: 0},
+      currency: { lumen: 10_000, runLumen: 10_000, lifetimeLumen: 10_000, cinder: 0 },
     });
 
     const result = buyBuilding(bulk, 'greenhouse', 10);
@@ -743,7 +774,7 @@ describe('shop actions', () => {
 
   it('a max buy spends what it can and leaves the rest', () => {
     const store = makeStore({
-      currency: { lumen: 1_000, runLumen: 1_000, lifetimeLumen: 1_000 , cinder: 0},
+      currency: { lumen: 1_000, runLumen: 1_000, lifetimeLumen: 1_000, cinder: 0 },
     });
     const result = buyBuilding(store, 'greenhouse', 'max');
 
@@ -758,7 +789,12 @@ describe('shop actions', () => {
 
   it('stops upgrading at the level ceiling', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0 , cinder: 0},
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
       city: {
         buildings: [{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }],
         charter: 8,
@@ -773,7 +809,12 @@ describe('shop actions', () => {
 
   it('refuses a level the charter has not chartered, and says so', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
       city: {
         buildings: [{ id: 'greenhouse', level: buildingCeiling(1) }],
         charter: 1,
@@ -789,7 +830,12 @@ describe('shop actions', () => {
 
   it('buys every level up to the ceiling and then stops', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
       city: { buildings: [], charter: 1, cosmetics: { unlocked: [], equipped: [] } },
     });
     buyBuilding(store, 'greenhouse', 'max');
@@ -803,7 +849,12 @@ describe('the charter', () => {
 
   it('refuses a charter the city is not broad enough for', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
       city: {
         buildings: [{ id: 'greenhouse', level: 25 }],
         charter: 1,
@@ -818,8 +869,17 @@ describe('the charter', () => {
 
   it('raises the ceiling once the city has gone wide enough', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
-      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
+      city: {
+        buildings: wide(25),
+        charter: 1,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
     });
     const result = buyCharter(store);
     expect(result.ok).toBe(true);
@@ -833,7 +893,11 @@ describe('the charter', () => {
   it('charges for it', () => {
     const store = makeStore({
       currency: { lumen: 100_000_000, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
-      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+      city: {
+        buildings: wide(25),
+        charter: 1,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
     });
     const before = store.getState().currency.lumen;
     const result = buyCharter(store);
@@ -844,14 +908,23 @@ describe('the charter', () => {
   it('refuses when the breadth is there but the Lumen is not', () => {
     const store = makeStore({
       currency: { lumen: 0, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
-      city: { buildings: wide(25), charter: 1, cosmetics: { unlocked: [], equipped: [] } },
+      city: {
+        buildings: wide(25),
+        charter: 1,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
     });
     expect(buyCharter(store)).toEqual({ ok: false, reason: 'Not enough Lumen.' });
   });
 
   it('has nothing left to sell at the last charter', () => {
     const store = makeStore({
-      currency: { lumen: Number.MAX_SAFE_INTEGER, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
+      currency: {
+        lumen: Number.MAX_SAFE_INTEGER,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: 0,
+      },
       city: {
         buildings: wide(200),
         charter: CHARTER_MAX_LEVEL,
@@ -866,7 +939,11 @@ describe('the charter', () => {
   it('resets with the city when it ascends', () => {
     const store = makeStore({
       currency: { lumen: 0, runLumen: 0, lifetimeLumen: 1e12, cinder: 0 },
-      city: { buildings: wide(120), charter: 6, cosmetics: { unlocked: [], equipped: [] } },
+      city: {
+        buildings: wide(120),
+        charter: 6,
+        cosmetics: { unlocked: [], equipped: [] },
+      },
     });
     expect(ascend(store).ok).toBe(true);
     expect(store.getState().city.charter).toBe(1);
@@ -876,7 +953,7 @@ describe('the charter', () => {
 describe('cosmetics', () => {
   it('buys a cosmetic, equips it, and swaps out the one in its slot', () => {
     const store = makeStore({
-      currency: { lumen: 5_000, runLumen: 5_000, lifetimeLumen: 5_000 , cinder: 0},
+      currency: { lumen: 5_000, runLumen: 5_000, lifetimeLumen: 5_000, cinder: 0 },
     });
 
     expect(buyCosmetic(store, 'teal-lanterns').ok).toBe(true);
@@ -1050,5 +1127,161 @@ describe('cinder and research', () => {
       vault: { ...base.vault, accruedThrough: new Date(2026, 6, 21).getTime() },
     });
     expect(collectVault(store, new Date(2026, 6, 21, 9, 15)).ok).toBe(true);
+  });
+});
+
+describe('streak wards', () => {
+  it('sells a ward for Cinder, up to the number that can be held', () => {
+    const store = makeStore({
+      currency: { lumen: 0, runLumen: 0, lifetimeLumen: 0, cinder: 100 },
+    });
+    expect(buyWard(store, AT(TODAY))).toEqual({ ok: true });
+    expect(store.getState().streak.wards).toBe(1);
+    expect(store.getState().currency.cinder).toBe(100 - WARD_CINDER_COST);
+    expect(buyWard(store, AT(TODAY))).toEqual({
+      ok: false,
+      reason: 'You already hold a ward.',
+    });
+  });
+
+  it('refuses without the Cinder', () => {
+    const store = makeStore();
+    expect(buyWard(store, AT(TODAY))).toEqual({
+      ok: false,
+      reason: 'Not enough Cinder.',
+    });
+  });
+
+  it('is spent by the day check that runs on the vault timer', () => {
+    // Last active the Friday before; Monday was missed; the tab is still open
+    // on Tuesday. The timer's sync must notice and spend the ward.
+    const friday = addDays(TODAY, -4);
+    const base = createInitialState();
+    const store = makeStore({
+      streak: {
+        ...base.streak,
+        current: 8,
+        longest: 8,
+        lastActiveDate: friday,
+        wards: 1,
+      },
+    });
+    syncVault(store, AT(TODAY));
+    expect(store.getState().streak).toMatchObject({ current: 8, wards: 0, wardsUsed: 1 });
+  });
+});
+
+describe('mendStreak', () => {
+  /** A 12-day run, broken this morning by a missed Monday. */
+  function brokenStore(currency: { cinder?: number; aether?: number } = {}): Store {
+    const friday = addDays(TODAY, -4);
+    const base = createInitialState();
+    const store = makeStore({
+      currency: { ...base.currency, cinder: currency.cinder ?? 0 },
+      ascension: { ...base.ascension, aether: currency.aether ?? 0 },
+      streak: { ...base.streak, current: 12, longest: 12, lastActiveDate: friday },
+    });
+    syncVault(store, AT(TODAY));
+    return store;
+  }
+
+  it('restores the run for Cinder', () => {
+    const store = brokenStore({ cinder: 500 });
+    expect(store.getState().streak.current).toBe(0);
+
+    const result = mendStreak(store, 'cinder', AT(TODAY));
+    expect(result).toEqual({ ok: true, streak: 12 });
+    const state = store.getState();
+    expect(state.streak.current).toBe(12);
+    expect(state.streak.broken).toBeNull();
+    expect(state.currency.cinder).toBeLessThan(500);
+    expect(state.achievements).toContain('mended');
+  });
+
+  it('can be paid in Aether instead', () => {
+    const store = brokenStore({ aether: 50 });
+    expect(mendStreak(store, 'aether', AT(TODAY)).ok).toBe(true);
+    expect(store.getState().ascension.aether).toBeLessThan(50);
+  });
+
+  it('refuses without the currency, and without a broken run', () => {
+    expect(mendStreak(brokenStore(), 'cinder', AT(TODAY))).toEqual({
+      ok: false,
+      reason: 'Not enough Cinder.',
+    });
+    expect(mendStreak(makeStore(), 'cinder', AT(TODAY))).toEqual({
+      ok: false,
+      reason: 'There is no broken run to mend.',
+    });
+  });
+
+  it('lets a review made before noticing still count toward the mended run', () => {
+    const store = brokenStore({ cinder: 500 });
+    const doneIds = defaultItems('morning').map((item) => item.id);
+    completeReview(store, 'morning', doneIds, { now: AT(TODAY), rng: noDrops });
+    expect(store.getState().streak.current).toBe(1);
+
+    expect(mendStreak(store, 'cinder', AT(TODAY))).toEqual({ ok: true, streak: 13 });
+  });
+});
+
+describe('fireKiln', () => {
+  it('burns Cinder into Aether without touching what ascension has paid', () => {
+    const store = makeStore({
+      currency: {
+        lumen: 0,
+        runLumen: 0,
+        lifetimeLumen: 0,
+        cinder: KILN_CINDER_PER_AETHER * 3,
+      },
+    });
+    expect(fireKiln(store, 2)).toEqual({ ok: true });
+    const state = store.getState();
+    expect(state.ascension.aether).toBe(2);
+    expect(state.ascension.aetherEarned).toBe(0);
+    expect(state.currency.cinder).toBe(KILN_CINDER_PER_AETHER);
+  });
+
+  it('refuses a batch it cannot pay for', () => {
+    const store = makeStore();
+    expect(fireKiln(store)).toEqual({ ok: false, reason: 'Not enough Cinder.' });
+  });
+});
+
+describe('weekly expeditions', () => {
+  it('pays Cinder and Lumen on the review that finishes the week', () => {
+    // Full-clear both reviews every weekday until the week's expedition lands,
+    // and check it is paid once, on exactly that review.
+    const monday = addDays(TODAY, -1);
+    const weekly = weeklyFor(monday);
+    const store = makeStore();
+    const morning = defaultItems('morning').map((item) => item.id);
+    const daily = defaultItems('daily').map((item) => item.id);
+
+    let paidOn: number | null = null;
+    let paidCinder = 0;
+    let review = 0;
+    for (let offset = 0; offset < 5; offset += 1) {
+      const date = addDays(monday, offset);
+      for (const [id, items] of [
+        ['morning', morning],
+        ['daily', daily],
+      ] as const) {
+        const outcome = completeReview(store, id, items, { now: AT(date), rng: noDrops });
+        if (outcome.reward.weeklyId) {
+          expect(paidOn).toBeNull();
+          paidOn = review;
+          paidCinder = outcome.weeklyCinder;
+          expect(outcome.reward.weeklyLumen).toBeGreaterThan(0);
+          expect(outcome.reward.totalLumen).toBeGreaterThanOrEqual(
+            outcome.reward.weeklyLumen,
+          );
+        }
+        review += 1;
+      }
+    }
+
+    expect(paidOn).not.toBeNull();
+    expect(paidCinder).toBe(getWeekly(weekly.id)!.cinder);
   });
 });

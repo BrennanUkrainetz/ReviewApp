@@ -187,6 +187,23 @@
   text-wrap: pretty;
 }
 
+.perk--maxed {
+  border-color: color-mix(in srgb, var(--mist) 60%, transparent);
+}
+
+.perk__rank {
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.perk__next {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+
 .perk__flavor {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
@@ -220,4 +237,11 @@
   text-align: center;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
+}
+
+/* The Workshop kiln: a pair of buttons under the research tree. */
+.workshop__kiln {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

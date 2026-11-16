@@ -126,8 +126,19 @@ export interface BuildingSpec {
  * then flattens into something the scene can still frame.
  */
 export function heightAt(spec: BuildingSpec, level: number): number {
-  const steps = Math.log2(Math.max(level, 1) + 1) - 1;
+  const steps = Math.log2(visualLevel(level) + 1) - 1;
   return spec.height * (1 + HEIGHT_PER_STEP * steps);
+}
+
+/**
+ * The level a building is *drawn* at. Levels go to 400 now, but the scene was
+ * framed for 200 and a skyline has only so much sky — past 200 a building has
+ * already made its point, and the charter badge in the shop says the rest.
+ */
+const VISUAL_LEVEL_CAP = 200;
+
+function visualLevel(level: number): number {
+  return Math.min(Math.max(level, 1), VISUAL_LEVEL_CAP);
 }
 
 /**
@@ -139,7 +150,7 @@ const HEIGHT_PER_STEP = 0.22;
 
 /** Half-width, growing far more slowly than height so towers stay towers. */
 export function widthAt(spec: BuildingSpec, level: number): number {
-  const steps = Math.log2(Math.max(level, 1) + 1) - 1;
+  const steps = Math.log2(visualLevel(level) + 1) - 1;
   return spec.width * (1 + 0.07 * steps);
 }
 

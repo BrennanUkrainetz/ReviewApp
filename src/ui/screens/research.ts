@@ -6,22 +6,15 @@
  * a rule rather than a number, so each card states the rule in plain words from
  * its effect data — there is no separate copy to drift out of sync.
  */
-import {
-  RESEARCH_BRANCHES,
-  researchInBranch,
-  type ResearchDef,
-} from '@/config/research';
+import { RESEARCH_BRANCHES, researchInBranch, type ResearchDef } from '@/config/research';
+import { KILN_CINDER_PER_AETHER } from '@/config/tuning';
 import { formatBig } from '@/domain/bignum';
-import {
-  nextResearch,
-  researchStatus,
-  type ResearchStatus,
-} from '@/domain/research';
-import { buyResearch } from '@/state/actions';
+import { nextResearch, researchStatus, type ResearchStatus } from '@/domain/research';
+import { buyResearch, fireKiln } from '@/state/actions';
 import type { AerieState } from '@/state/types';
 import type { AppContext, Screen } from '../context';
 import { el, plural, replaceChildren } from '../dom';
-import { iconBack, iconCinder, iconLock } from '../icons';
+import { iconAether, iconBack, iconCinder, iconLock } from '../icons';
 
 /** How the day earns Cinder, stated once at the top so the tree has a source. */
 const CINDER_SOURCE =
@@ -108,6 +101,61 @@ export function createResearchScreen(ctx: AppContext): Screen {
     );
   }
 
+  /**
+   * The kiln: where Cinder goes once there is nothing left to research, or
+   * whenever an Aether is worth more to you than the next node. Always shown,
+   * so the rate is known long before it matters.
+   */
+  function kiln(state: AerieState): HTMLElement {
+    const batches = Math.floor(state.currency.cinder / KILN_CINDER_PER_AETHER);
+    const burn = (count: number): void => {
+      const result = fireKiln(ctx.store, count);
+      ctx.toast(
+        result.ok ? `The kiln gives up ${plural(count, 'Aether')}.` : result.reason,
+      );
+    };
+
+    return el(
+      'section',
+      { class: 'perk-branch' },
+      el(
+        'header',
+        { class: 'perk-branch__head' },
+        el('h3', { class: 'perk-branch__name' }, 'The Kiln'),
+        el(
+          'p',
+          { class: 'perk-branch__blurb' },
+          `Burns ${KILN_CINDER_PER_AETHER} Cinder down into one Aether, to spend on perks. Aether from the kiln never reduces what an ascension pays.`,
+        ),
+      ),
+      el(
+        'div',
+        { class: 'workshop__kiln' },
+        el(
+          'button',
+          {
+            class: ['btn', batches > 0 ? 'btn--buy' : 'btn--secondary'],
+            attrs: { type: 'button', disabled: batches <= 0 },
+            on: { click: () => burn(1) },
+          },
+          el('span', { class: 'stat__icon', html: iconAether() }),
+          `Fire once · ${KILN_CINDER_PER_AETHER} Cinder`,
+        ),
+        batches > 1
+          ? el(
+              'button',
+              {
+                class: 'btn btn--secondary',
+                attrs: { type: 'button' },
+                on: { click: () => burn(batches) },
+              },
+              `Fire ${batches}× · ${formatBig(batches * KILN_CINDER_PER_AETHER)} Cinder`,
+            )
+          : null,
+      ),
+    );
+  }
+
   function render(): void {
     const state = ctx.store.getState();
     const next = nextResearch(state);
@@ -142,9 +190,14 @@ export function createResearchScreen(ctx: AppContext): Screen {
         ? el(
             'p',
             { class: 'workshop__next' },
-            `Next within reach: ${next.name}, ${plural(next.cost, 'Cinder')}.`,
+            `Next within reach: ${next.name}, ${next.cost} Cinder.`,
           )
-        : el('p', { class: 'workshop__next' }, 'Everything is researched.'),
+        : el(
+            'p',
+            { class: 'workshop__next' },
+            'Everything is researched. The kiln takes what you earn from here.',
+          ),
+      kiln(state),
     );
   }
 

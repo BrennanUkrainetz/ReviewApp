@@ -6,14 +6,21 @@
  * it is the only genuinely destructive action in the game.
  */
 import { ALTITUDE_BANDS, bandFor } from '@/config/ascension';
-import { PERK_BRANCHES, perksInBranch, type PerkDef } from '@/config/perks';
+import {
+  getPerk,
+  PERK_BRANCHES,
+  perkRankCost,
+  perksInBranch,
+  type PerkDef,
+  type PerkEffect,
+} from '@/config/perks';
 import {
   canAscend,
   lumenForNextAether,
   modsFor,
   pendingAether,
   perkStatus,
-  type PerkStatus,
+  rankOf,
 } from '@/domain/ascension';
 import { formatBig, formatMultiplier } from '@/domain/bignum';
 import { ascend, buyPerk } from '@/state/actions';
@@ -23,37 +30,50 @@ import type { AppContext, Screen } from '../context';
 import { el, plural, replaceChildren } from '../dom';
 import { iconAether, iconBack, iconLock } from '../icons';
 
-/** Plain-English description of what a perk does, from its effect data. */
-function perkEffectLabel(perk: PerkDef): string {
-  const effect = perk.effect;
+/**
+ * Plain-English description of what `rank` ranks of a perk add up to, from its
+ * effect data. Used twice on each card: once for a single rank (what the next
+ * one buys) and once for the ranks owned (what it is doing now).
+ */
+function perkEffectLabel(effect: PerkEffect, rank: number): string {
   switch (effect.kind) {
     case 'output':
-      return `${formatMultiplier(effect.factor)} city output`;
+      return `${formatMultiplier(effect.factor ** rank)} city output`;
     case 'review':
-      return `${formatMultiplier(effect.factor)} Lumen from reviews`;
+      return `${formatMultiplier(effect.factor ** rank)} Lumen from reviews`;
+    case 'contract':
+      return `${formatMultiplier(effect.factor ** rank)} contract and expedition bonuses`;
     case 'cost':
-      return `Buildings cost ${Math.round((1 - effect.factor) * 100)}% less`;
+      return `Buildings cost ${Math.round((1 - effect.factor ** rank) * 100)}% less`;
     case 'streak-cap':
-      return `Streak bonus keeps growing for ${plural(effect.extra, 'more day')}`;
+      return `Streak bonus keeps growing for ${plural(effect.extra * rank, 'more day')}`;
     case 'streak-rate':
-      return `+${Math.round(effect.extra * 100)}% streak bonus per day`;
+      return `+${(effect.extra * rank * 100).toFixed(1).replace(/\.0$/, '')}% streak bonus per day`;
     case 'drop':
-      return `+${Math.round(effect.bonus * 100)}% cosmetic drop chance`;
+      return `+${Math.round(effect.bonus * rank * 100)}% cosmetic drop chance`;
     case 'milestone':
-      return `${formatMultiplier(effect.factor)} milestone chest bonus`;
+      return `${formatMultiplier(effect.factor ** rank)} milestone chest bonus`;
+    case 'mote':
+      return `${formatMultiplier(effect.factor ** rank)} mote value`;
+    case 'aether':
+      return `${formatMultiplier(effect.factor ** rank)} Aether from ascending`;
     case 'carry-lumen':
-      return `Keep ${Math.round(effect.share * 100)}% of your Lumen when you ascend`;
-    case 'foothold':
-      return `Start each run with the first ${effect.count} buildings at level ${effect.level}`;
+      return `Keep ${Math.round(effect.share * rank * 100)}% of your Lumen when you ascend`;
+    case 'ward-slots':
+      return `Hold ${plural(effect.extra * rank, 'more streak ward')}`;
+    case 'foothold': {
+      const step = effect.steps[Math.min(rank, effect.steps.length) - 1];
+      return step
+        ? `Start each run with the first ${step.count} buildings at level ${step.level}`
+        : 'Start each run with a head start';
+    }
   }
 }
 
-const STATUS_NOTE: Record<PerkStatus, string> = {
-  owned: 'Learned',
-  available: '',
-  unaffordable: '',
-  locked: '',
-};
+/** The rank badge: "Rank 3 / 10", or just "Rank 3" for an uncapped perk. */
+function rankLabel(perk: PerkDef, rank: number): string {
+  return perk.maxRank === null ? `Rank ${rank}` : `Rank ${rank} / ${perk.maxRank}`;
+}
 
 export function createAscensionScreen(ctx: AppContext): Screen {
   const summary = el('div', { class: 'ascend__summary' });
@@ -152,6 +172,17 @@ export function createAscensionScreen(ctx: AppContext): Screen {
             ? `The city would rise to the ${nextBand.name}.`
             : 'Aether is worked out from every Lumen you have ever earned, so nothing is ever wasted.',
         ),
+        // The one piece of prestige-game wisdom worth stating: a grant smaller
+        // than what you already have barely moves your perks, and costs a run.
+        ready && state.ascension.aetherEarned > 0
+          ? el(
+              'p',
+              { class: 'ascend__offer-note' },
+              granted >= state.ascension.aetherEarned
+                ? 'That at least doubles every Aether you have earned — a strong time to go.'
+                : `Rule of thumb: ascending pays best once it at least doubles what you have earned (${formatBig(state.ascension.aetherEarned)}).`,
+            )
+          : null,
         el(
           'button',
           {
@@ -168,26 +199,44 @@ export function createAscensionScreen(ctx: AppContext): Screen {
   function perkCard(perk: PerkDef, state: AerieState): HTMLElement {
     const status = perkStatus(perk, state.ascension);
     const locked = status === 'locked';
+    const maxed = status === 'maxed';
+    const rank = rankOf(state.ascension.perkRanks, perk.id);
+    const cost = perkRankCost(perk, rank);
+    const needs = perk.requires ? getPerk(perk.requires.id) : undefined;
 
     return el(
       'article',
-      { class: ['perk', `perk--${status}`] },
+      { class: ['perk', `perk--${status}`, rank > 0 && 'perk--owned'] },
       el(
         'div',
         { class: 'perk__head' },
         el('h4', { class: 'perk__name' }, perk.name),
-        status === 'owned'
-          ? el('span', { class: 'badge badge--floor' }, STATUS_NOTE.owned)
+        maxed
+          ? el('span', { class: 'badge badge--floor' }, 'Mastered')
           : el(
               'span',
               { class: 'perk__cost num' },
               locked ? el('span', { class: 'perk__lock', html: iconLock() }) : null,
-              `${perk.cost}`,
+              formatBig(cost),
             ),
       ),
-      el('p', { class: 'perk__effect' }, perkEffectLabel(perk)),
+      el('p', { class: 'perk__rank num' }, rankLabel(perk, rank)),
+      el(
+        'p',
+        { class: 'perk__effect' },
+        rank > 0
+          ? `Now: ${perkEffectLabel(perk.effect, rank)}`
+          : `Each rank: ${perkEffectLabel(perk.effect, 1)}`,
+      ),
+      rank > 0 && !maxed
+        ? el(
+            'p',
+            { class: 'perk__next' },
+            `Next rank: ${perkEffectLabel(perk.effect, rank + 1)}`,
+          )
+        : null,
       el('p', { class: 'perk__flavor' }, perk.flavor),
-      status === 'owned'
+      maxed
         ? null
         : el(
             'button',
@@ -201,11 +250,17 @@ export function createAscensionScreen(ctx: AppContext): Screen {
               on: {
                 click: () => {
                   const result = buyPerk(ctx.store, perk.id);
-                  ctx.toast(result.ok ? `${perk.name} learned.` : result.reason);
+                  ctx.toast(
+                    result.ok ? `${perk.name} — rank ${rank + 1}.` : result.reason,
+                  );
                 },
               },
             },
-            locked ? 'Needs an earlier perk' : 'Learn',
+            locked
+              ? `Needs ${needs?.name ?? 'an earlier perk'} rank ${perk.requires?.rank ?? 1}`
+              : rank === 0
+                ? 'Learn'
+                : `Raise to rank ${rank + 1}`,
           ),
     );
   }

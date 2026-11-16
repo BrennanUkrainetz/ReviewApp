@@ -16,6 +16,7 @@
 import {
   VAULT_CAP_DAYS,
   VAULT_MAX_ACCRUAL_DAYS,
+  VAULT_WORK_MULTIPLIER,
   WORK_END_MINUTES,
   WORK_START_MINUTES,
   type CollectionWindow,
@@ -32,7 +33,23 @@ export function windowsForState(state: AerieState): CollectionWindow[] {
 }
 
 const MS_PER_DAY = 86_400_000;
-const SECONDS_PER_DAY = 86_400;
+
+/**
+ * Nominal seconds in one ordinary reviewed day: the off-hours at face value,
+ * the work band counted `VAULT_WORK_MULTIPLIER` times over.
+ *
+ * The city's quoted output is spread over *this* rather than over 86,400
+ * seconds, so a reviewed day fills the vault by exactly one day's output. It
+ * used to be divided by the wall-clock day and then sped up threefold for work
+ * hours on top, which quietly paid 1.7 days of output per day — and since
+ * every building's payback is quoted in days of output, the whole ladder ran
+ * seventy percent faster than it was priced for. Research that raises the
+ * work rate (Shift Bonus) still pays extra, because it is measured against
+ * this baseline rather than folded into it.
+ */
+export const NOMINAL_SECONDS_PER_DAY =
+  (24 * 60 - (WORK_END_MINUTES - WORK_START_MINUTES)) * 60 +
+  (WORK_END_MINUTES - WORK_START_MINUTES) * 60 * VAULT_WORK_MULTIPLIER;
 
 /* ------------------------------------------------------------------ */
 /* Windows                                                             */
@@ -76,7 +93,8 @@ export function nextWindow(
   const minutes = minutesOfDay(now);
   const ordered = [...windows].sort((a, b) => a.startMinutes - b.startMinutes);
   const later = ordered.find((window) => window.startMinutes > minutes);
-  if (later) return { window: later, opensAt: new Date(atMinutes(now, later.startMinutes)) };
+  if (later)
+    return { window: later, opensAt: new Date(atMinutes(now, later.startMinutes)) };
 
   const first = ordered[0]!;
   const tomorrow = fromDateKey(addDays(toDateKey(now), 1));
@@ -224,7 +242,8 @@ export function accrueVault(state: AerieState, now: Date = new Date()): VaultSta
   // The `vaultRate` research multiplies the whole fill; work and idle rates are
   // per-second modifiers passed into the nominal-seconds walk.
   const perSecond =
-    (cityOutput(state.city.buildings, mods) / SECONDS_PER_DAY) * research.vaultRate;
+    (cityOutput(state.city.buildings, mods) / NOMINAL_SECONDS_PER_DAY) *
+    research.vaultRate;
   // The remainder from last time rides along, and whatever this accrual doesn't
   // bank as a whole Lumen is carried on to the next. Neither rounding nor
   // flooring alone survives an arbitrary tick rate: rounding pays a whole Lumen
@@ -265,7 +284,8 @@ export function currentRate(state: AerieState, now: Date = new Date()): number {
   const mods = modsFor(state);
   const research = mods.research;
   const perSecond =
-    (cityOutput(state.city.buildings, mods) / SECONDS_PER_DAY) * research.vaultRate;
+    (cityOutput(state.city.buildings, mods) / NOMINAL_SECONDS_PER_DAY) *
+    research.vaultRate;
   const minutes = minutesOfDay(now);
   const working = minutes >= WORK_START_MINUTES && minutes < WORK_END_MINUTES;
   const reviewed = loggedOn(state.history, toDateKey(now));

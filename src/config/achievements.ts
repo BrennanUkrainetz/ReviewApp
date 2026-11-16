@@ -16,7 +16,14 @@
  * silently make a completionist badge earnable early.
  */
 import { defaultItems, REVIEW_IDS } from '@/config/checklists';
-import { perksInBranch, PERK_BRANCHES, PERKS, type PerkBranch } from '@/config/perks';
+import {
+  perkMaxed,
+  perksInBranch,
+  PERK_BRANCHES,
+  PERKS,
+  type PerkBranch,
+  type PerkDef,
+} from '@/config/perks';
 import { BUILDINGS, COSMETICS, getCosmetic } from '@/config/shop';
 import {
   BUILDING_MAX_LEVEL,
@@ -30,6 +37,7 @@ import {
   isWeekend,
   missedWeekdays,
 } from '@/domain/dates';
+import { weekliesCompleted } from '@/domain/weekly';
 import type { AerieState, DayRecord, ReviewRecord } from '@/state/types';
 
 export type AchievementGroup = 'routine' | 'city' | 'fortune' | 'wealth' | 'ascension';
@@ -139,7 +147,11 @@ function hasComeback(history: DayRecord[]): boolean {
     const previous = logged[i - 1]!;
     const current = logged[i]!;
     if (daysBetween(previous, current) > 30) return true; // long gap; don't walk it
-    for (let cursor = addDays(previous, 1); cursor < current; cursor = addDays(cursor, 1)) {
+    for (
+      let cursor = addDays(previous, 1);
+      cursor < current;
+      cursor = addDays(cursor, 1)
+    ) {
       if (!isWeekend(cursor) && !active.has(cursor)) return true;
     }
   }
@@ -195,11 +207,29 @@ const everyBuildingAt = (level: number) => (state: AerieState) =>
 const aetherEarnedAt = (amount: number) => (state: AerieState) =>
   state.ascension.aetherEarned >= amount;
 
-/** Every perk in a branch learned. */
-const branchComplete = (branch: PerkBranch) => (state: AerieState) => {
-  const held = new Set(state.ascension.perks);
-  return perksInBranch(branch).every((perk) => held.has(perk.id));
-};
+/**
+ * A perk's owned rank. Read directly rather than through `domain/ascension`,
+ * which imports this catalogue — the dependency only runs one way.
+ */
+const rankIn = (state: AerieState, id: string): number =>
+  Math.max(0, Math.floor(state.ascension.perkRanks[id] ?? 0));
+
+const totalRanks = (state: AerieState): number =>
+  PERKS.reduce((sum, perk) => sum + rankIn(state, perk.id), 0);
+
+/**
+ * A perk counts as finished at its cap. An uncapped perk has no cap to reach,
+ * so for "the whole branch" it counts once it has been started — the capped
+ * perks are the ones a player can actually finish.
+ */
+const perkDone = (state: AerieState, perk: PerkDef): boolean =>
+  perk.maxRank === null
+    ? rankIn(state, perk.id) >= 1
+    : perkMaxed(perk, rankIn(state, perk.id));
+
+/** Every perk in a branch taken to its highest rank. */
+const branchComplete = (branch: PerkBranch) => (state: AerieState) =>
+  perksInBranch(branch).every((perk) => perkDone(state, perk));
 
 export const ACHIEVEMENTS: AchievementDef[] = [
   /* The routine — the part that is actually the point. */
@@ -403,7 +433,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     name: 'Ambitious',
     detail: 'Ran a routine with ten items in it.',
     group: 'routine',
-    earnedBy: (state) => REVIEW_IDS.some((id) => (state.checklists[id]?.length ?? 0) >= 10),
+    earnedBy: (state) =>
+      REVIEW_IDS.some((id) => (state.checklists[id]?.length ?? 0) >= 10),
   },
   {
     id: 'milestone-1',
@@ -432,6 +463,49 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     detail: 'Reached twenty-five twenty-day milestones.',
     group: 'routine',
     earnedBy: (state) => state.milestones.totalBigMilestonesHit >= 25,
+  },
+
+  {
+    id: 'first-ward',
+    name: 'Belt and Braces',
+    detail: 'Held a streak ward.',
+    group: 'routine',
+    earnedBy: (state) => state.streak.wards >= 1 || state.streak.wardsUsed >= 1,
+  },
+  {
+    id: 'ward-saved',
+    name: 'Caught By The Net',
+    detail: 'Had a ward cover a missed day.',
+    group: 'routine',
+    earnedBy: (state) => state.streak.wardsUsed >= 1,
+  },
+  {
+    id: 'mended',
+    name: 'Mended',
+    detail: 'Mended a broken run.',
+    group: 'routine',
+    earnedBy: (state) => state.streak.mendsUsed >= 1,
+  },
+  {
+    id: 'weekly-1',
+    name: 'Good Week',
+    detail: 'Finished a weekly expedition.',
+    group: 'routine',
+    earnedBy: (state) => weekliesCompleted(state.history) >= 1,
+  },
+  {
+    id: 'weekly-10',
+    name: 'Good Season',
+    detail: 'Finished ten weekly expeditions.',
+    group: 'routine',
+    earnedBy: (state) => weekliesCompleted(state.history) >= 10,
+  },
+  {
+    id: 'weekly-26',
+    name: 'Good Half-Year',
+    detail: 'Finished twenty-six weekly expeditions.',
+    group: 'routine',
+    earnedBy: (state) => weekliesCompleted(state.history) >= 26,
   },
 
   /* The city — building out the ladder. */
@@ -558,6 +632,36 @@ export const ACHIEVEMENTS: AchievementDef[] = [
           levelOf(state, def.id) >= 25 &&
           levelOf(state, def.synergy.from) >= 25,
       ),
+  },
+
+  {
+    id: 'charter-4',
+    name: 'Broad Charter',
+    detail: 'Raised the Hearth Hall to charter 4.',
+    group: 'city',
+    earnedBy: (state) => state.city.charter >= 4,
+  },
+  {
+    id: 'charter-8',
+    name: 'Open Skies',
+    detail: 'Raised the Hearth Hall to charter 8.',
+    group: 'city',
+    earnedBy: (state) => state.city.charter >= 8,
+  },
+  {
+    id: 'charter-12',
+    name: 'Past The Cluster',
+    detail:
+      'Raised the Hearth Hall to charter 12 — more kinds than the home islands hold.',
+    group: 'city',
+    earnedBy: (state) => state.city.charter >= 12,
+  },
+  {
+    id: 'charter-16',
+    name: 'The Last Charter',
+    detail: 'Raised the Hearth Hall to its final charter.',
+    group: 'city',
+    earnedBy: (state) => state.city.charter >= 16,
   },
 
   /* Fortune — what turns up in chests, and what you do with it. */
@@ -726,31 +830,36 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     name: 'Something Permanent',
     detail: 'Learned a perk.',
     group: 'ascension',
-    earnedBy: (state) => state.ascension.perks.length >= 1,
+    earnedBy: (state) => totalRanks(state) >= 1,
   },
   {
     id: 'ten-perks',
     name: 'Well Read',
-    detail: 'Learned ten perks.',
+    detail: 'Learned twenty-five perk ranks.',
     group: 'ascension',
-    earnedBy: (state) => state.ascension.perks.length >= 10,
+    earnedBy: (state) => totalRanks(state) >= 25,
   },
   {
     id: 'all-perks',
     name: 'Nothing Left To Learn',
-    detail: 'Learned every perk.',
+    detail: 'Took every perk to its highest rank.',
     group: 'ascension',
-    earnedBy: (state) => state.ascension.perks.length >= PERKS.length,
+    earnedBy: (state) => PERKS.every((perk) => perkDone(state, perk)),
   },
-  ...PERK_BRANCHES.map(
-    (branch): AchievementDef => ({
-      id: `branch-${branch.id}`,
-      name: `${branch.name}, Complete`,
-      detail: `Learned every perk in the ${branch.name} branch.`,
-      group: 'ascension',
-      earnedBy: branchComplete(branch.id),
-    }),
-  ),
+  ...PERK_BRANCHES.map((branch): AchievementDef => ({
+    id: `branch-${branch.id}`,
+    name: `${branch.name}, Complete`,
+    detail: `Took every perk in the ${branch.name} branch to its highest rank.`,
+    group: 'ascension',
+    earnedBy: branchComplete(branch.id),
+  })),
+  {
+    id: 'high-current-10',
+    name: 'Riding The Current',
+    detail: 'Took The High Current to rank ten.',
+    group: 'ascension',
+    earnedBy: (state) => rankIn(state, 'updraft-4') >= 10,
+  },
   {
     id: 'aether-50',
     name: 'Well Supplied',

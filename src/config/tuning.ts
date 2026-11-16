@@ -18,12 +18,16 @@ export const LUMEN_PER_POINT = 10;
  *
  * The larger of the two figures wins. The flat rate carries the opening days,
  * while the city makes less than a few hundred a day; the share carries
- * everything after. At this number two full clears come to a little under a
- * day of city output before streak and heat, and comfortably over it with them
- * — which puts the routine back at the top of the income table, where the
- * whole design says it belongs.
+ * everything after.
+ *
+ * It was 0.4, which on top of the vault, motes and contracts made a good day
+ * worth nearly ten days of output and let the ladder — priced for about one —
+ * be climbed in a month. At this number two full clears are worth a third of
+ * a day before streak and heat, and a little under a whole day with both at
+ * their peak: still the largest thing you can do *today* to move the city,
+ * without being the thing that breaks its pacing.
  */
-export const REVIEW_SHARE_OF_OUTPUT = 0.4;
+export const REVIEW_SHARE_OF_OUTPUT = 0.15;
 
 /** Bonus points added on top when a review is cleared completely. */
 export const FULL_CLEAR_BONUS_POINTS = 2;
@@ -46,9 +50,9 @@ export const SMALL_MILESTONE_INTERVAL = 5;
  * flat values are floors, for the first week when the day's payout is tiny.
  */
 export const SMALL_MILESTONE_BONUS_FLOOR = 150;
-export const SMALL_MILESTONE_BONUS_SHARE = 0.5;
+export const SMALL_MILESTONE_BONUS_SHARE = 0.4;
 export const BIG_MILESTONE_BONUS_FLOOR = 500;
-export const BIG_MILESTONE_BONUS_SHARE = 2;
+export const BIG_MILESTONE_BONUS_SHARE = 1.5;
 
 /** Chance (0–1) that an ordinary chest also drops a cosmetic. */
 export const COSMETIC_DROP_CHANCE = 0.18;
@@ -88,11 +92,11 @@ export const VAULT_IDLE_SHARE = 0.1;
 /**
  * Vault ceiling, as a multiple of the city's nominal daily output.
  *
- * A full day of real accrual comes to ~1.7× nominal (8.5h at 3× plus 15.5h at
- * 1×). Between the two windows you bank ~0.9× in the day and ~0.7× overnight,
- * so ordinary twice-daily play never touches the cap — but sleep through a
- * whole day and roughly a third of it spills. That asymmetry is the mechanic:
- * missing a single window costs nothing, missing a day costs.
+ * A reviewed day accrues exactly one day's output (see
+ * `NOMINAL_SECONDS_PER_DAY` in `domain/vault.ts`): about 0.6 of it between the
+ * morning and afternoon windows, and 0.4 overnight. Missing one window
+ * therefore just fills the vault to the brim — it costs nothing — but let a
+ * whole day go by and the rest spills. That asymmetry is the mechanic.
  */
 export const VAULT_CAP_DAYS = 1;
 
@@ -127,10 +131,16 @@ export const HISTORY_PAGE_SIZE = 30;
 export const BUILDING_COST_GROWTH = 1.11;
 
 /**
- * A hard ceiling on levels. Not meant to be reached — it exists so bulk-buy
+ * A hard ceiling on levels — the last charter's ceiling. It exists so bulk-buy
  * maths always terminates, and so a building can't silently hit float limits.
+ *
+ * It was 200, which a long enough run of ascensions simply finished: every
+ * tier at the cap, and nothing left to buy but the next ascension. The
+ * charters past 8 are what reach above 200, and they ask for more kinds of
+ * building than the home cluster has — so the upper half of the range is
+ * climbed on the high islands, one altitude band at a time.
  */
-export const BUILDING_MAX_LEVEL = 200;
+export const BUILDING_MAX_LEVEL = 400;
 
 /**
  * A building's output doubles every this many levels, all the way to the
@@ -164,9 +174,17 @@ export const BUILDING_MILESTONE_MULTIPLIER = 2;
  * building rather than that one": each tier improves one thing no other tier
  * touches (see `specialty` in `config/shop.ts`), so the Greenhouse is worth
  * levelling for its Cinder even in the stretch where the Lighthouse pays more
- * Lumen. Five steps across the full range, at 40 / 80 / 120 / 160 / 200.
+ * Lumen. Five steps, at 40 / 80 / 120 / 160 / 200.
  */
 export const SPECIALTY_INTERVAL = 40;
+
+/**
+ * Specialties stop at their fifth step even though levels go on to 400. They
+ * are the reason to prefer one tier to another, not a second growth curve —
+ * and several of them (Aether, prices, the streak cap) would be far too strong
+ * doubled.
+ */
+export const SPECIALTY_MAX_STEPS = 5;
 
 /** Every *distinct* building standing adds this to the city's whole output. */
 export const DISTRICT_BONUS_PER_BUILDING = 0.02;
@@ -203,8 +221,15 @@ export const BUILDING_REVEAL_FRACTION = 0.4;
 /** Charter 1 is free — the Hearth Hall is there from the first day. */
 export const CHARTER_MIN_LEVEL = 1;
 
-/** The last charter. Its ceiling is `BUILDING_MAX_LEVEL` exactly. */
-export const CHARTER_MAX_LEVEL = 8;
+/**
+ * The last charter. Its ceiling is `BUILDING_MAX_LEVEL` exactly.
+ *
+ * Charter `L` asks for `L + 1` kinds, and the home cluster has twelve — so
+ * charters 12 and up can only be met with buildings on the high islands:
+ * 12–13 once the city has reached Cirrus, 14–15 at the Stratosphere, and the
+ * last at the Aurora.
+ */
+export const CHARTER_MAX_LEVEL = 16;
 
 /** Each charter raises every building's ceiling by this many levels. */
 export const CHARTER_LEVELS_PER_STEP = 25;
@@ -217,17 +242,16 @@ export const CHARTER_LEVELS_PER_STEP = 25;
 export const CHARTER_KINDS_OVER_LEVEL = 1;
 
 /**
- * Price of the next charter, as days of the city's own output.
+ * Price of a charter, as levels of the newest building its requirement names,
+ * at the height it names — see `charterCost` in `domain/charter.ts`.
  *
- * A share of the day rather than a curve of its own, like every other cost in
- * this file that has to stay meaningful across twelve orders of magnitude. The
- * requirement above is the real gate; this is what stops a charter being free
- * the moment it is met. Three days is a little over two full collections, so it
- * is felt without ever being a wall.
+ * Fixed per charter. It used to be three days of the city's *current* output,
+ * which is a price that runs away from you: every Lumen you earned toward it
+ * raised it, and meeting the requirement (by building) raised it again.
  */
-export const CHARTER_COST_DAYS = 3;
+export const CHARTER_COST_LEVELS = 5;
 
-/** Floor under that, for the opening days when the city produces almost nothing. */
+/** Floor under that, so the first charter is never trivially cheap. */
 export const CHARTER_MIN_COST = 250;
 
 /** Every charter past the first adds this to the whole city's output. */
@@ -244,15 +268,24 @@ export const CHARTER_OUTPUT_PER_LEVEL = 0.15;
  *
  * Heat decays to nothing the moment a day passes without one, which is
  * deliberate — a combo you cannot lose is just a number that goes up.
+ *
+ * Tops out at ×2 rather than the ×3 it used to: heat multiplies the review,
+ * the contract and the milestone chests all at once, and at ×3 a hot week was
+ * worth more than the city itself.
  */
-export const HEAT_PER_DAY = 0.1;
+export const HEAT_PER_DAY = 0.05;
 export const HEAT_CAP_DAYS = 20;
 
 /* ------------------------------------------------------------------ */
 /* Daily contract                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Contract bonuses are paid as a share of the day's payout, like milestones. */
+/**
+ * Contract bonuses are paid as a share of the city's daily output, at the
+ * day's heat — see `bonusShare` on each contract. The share used to be struck
+ * against review *plus* output, which let a Perfect Day on full heat pay out
+ * eight days of city in one chest.
+ */
 export const CONTRACT_BONUS_FLOOR = 100;
 
 /* ------------------------------------------------------------------ */
@@ -266,8 +299,12 @@ export const CONTRACT_BONUS_FLOOR = 100;
  */
 export const MOTE_CHARGES_PER_REVIEW = 3;
 
-/** Each mote pays this share of the city's daily output, with a flat floor. */
-export const MOTE_SHARE_OF_OUTPUT = 0.15;
+/**
+ * Each mote pays this share of the city's daily output, with a flat floor.
+ * Six a day at a full chain come to about a third of a day — a treat, not a
+ * second vault. (At 0.15 they were worth more than the vault was.)
+ */
+export const MOTE_SHARE_OF_OUTPUT = 0.05;
 export const MOTE_FLOOR_LUMEN = 25;
 
 /**
@@ -321,3 +358,65 @@ export const CINDER_HEAT_BONUSES: { days: number; bonus: number }[] = [
   { days: 10, bonus: 2 },
   { days: 20, bonus: 4 },
 ];
+
+/* ------------------------------------------------------------------ */
+/* Streak wards and mending                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A ward is insurance bought ahead of time: held wards are spent
+ * automatically, one per missed weekday, the next time the app notices a gap.
+ * It is for the day you forget to open the app at all — a day you *know* you
+ * will miss is what the free "Take a day off" button is for.
+ *
+ * Priced in Cinder because Cinder is what a well-run routine earns: the
+ * insurance is paid for by the good days. One can be held to start; perks and
+ * research raise that.
+ */
+export const WARD_CINDER_COST = 25;
+export const WARD_BASE_SLOTS = 1;
+
+/**
+ * A mend is the same cover bought after the fact. A broken run can be mended
+ * on the day the break is noticed and for this many weekdays after it —
+ * long enough to notice, short enough that it is a repair and not a pardon.
+ */
+export const MEND_WINDOW_WEEKDAYS = 3;
+
+/**
+ * Cinder price of a mend: a base, plus a price per weekday it has to cover,
+ * plus a little per day of the run being saved — a long run is worth more, so
+ * it costs more. A 20-day run broken by one missed day comes to 32.
+ */
+export const MEND_CINDER_BASE = 10;
+export const MEND_CINDER_PER_DAY = 12;
+export const MEND_CINDER_PER_STREAK_DAY = 0.5;
+
+/**
+ * A mend can be paid in Aether instead, at this many Cinder to one Aether —
+ * dear on purpose, since Aether is the scarcer currency, but there when the
+ * Cinder is not.
+ */
+export const MEND_CINDER_PER_AETHER = 8;
+
+/* ------------------------------------------------------------------ */
+/* Weekly expeditions                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Floor under a weekly expedition's Lumen bonus, for the first weeks. */
+export const WEEKLY_BONUS_FLOOR = 250;
+
+/* ------------------------------------------------------------------ */
+/* The kiln                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Cinder the Workshop kiln burns down into one Aether.
+ *
+ * Research is a finite list, and a routine that keeps running keeps earning
+ * Cinder after it is all bought. The kiln is where that goes, so a good day is
+ * never worth nothing. The rate is steep on purpose — a hot week of full clears
+ * comes to an Aether or two — so it rounds out an ascension rather than
+ * replacing one.
+ */
+export const KILN_CINDER_PER_AETHER = 100;

@@ -21,19 +21,22 @@
  * seam those systems already read, so none of them needed a second code path.
  */
 import { BUILDINGS, type SpecialtyDef } from '@/config/shop';
-import { BUILDING_MAX_LEVEL, SPECIALTY_INTERVAL } from '@/config/tuning';
+import { SPECIALTY_INTERVAL, SPECIALTY_MAX_STEPS } from '@/config/tuning';
 import type { OwnedBuilding } from '@/state/types';
 import type { Mods } from './ascension';
 
-/** How many specialty steps a level has earned. Five across the full range. */
+/** How many specialty steps a level has earned — at most five. */
 export function specialtySteps(level: number): number {
-  return Math.floor(Math.min(level, BUILDING_MAX_LEVEL) / SPECIALTY_INTERVAL);
+  return Math.min(
+    SPECIALTY_MAX_STEPS,
+    Math.floor(Math.max(0, level) / SPECIALTY_INTERVAL),
+  );
 }
 
 /** The level at which a specialty next improves, or `null` past the last step. */
 export function nextSpecialtyLevel(level: number): number | null {
-  const next = (specialtySteps(level) + 1) * SPECIALTY_INTERVAL;
-  return next <= BUILDING_MAX_LEVEL ? next : null;
+  const steps = specialtySteps(level);
+  return steps < SPECIALTY_MAX_STEPS ? (steps + 1) * SPECIALTY_INTERVAL : null;
 }
 
 /** Kinds whose `perStep` is a factor rather than an addend. */
@@ -82,10 +85,7 @@ export function specialtyValue(specialty: SpecialtyDef, level: number): number {
  * stack: the point of levelling the Starforge is that it does something your
  * perks cannot.
  */
-export function applySpecialties(
-  mods: Mods,
-  buildings: readonly OwnedBuilding[],
-): Mods {
+export function applySpecialties(mods: Mods, buildings: readonly OwnedBuilding[]): Mods {
   const levels = new Map(buildings.map((owned) => [owned.id, owned.level]));
   const next: Mods = { ...mods, research: { ...mods.research } };
 

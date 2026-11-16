@@ -101,6 +101,27 @@ export function addWeekdays(key: DateKey, offset: number): DateKey {
   return cursor;
 }
 
+/**
+ * Every weekday strictly between two keys, oldest first — the days
+ * `missedWeekdays` counts, by name. Empty when nothing was skipped.
+ */
+export function weekdaysBetween(from: DateKey, to: DateKey): DateKey[] {
+  const days: DateKey[] = [];
+  const count = missedWeekdays(from, to);
+  let cursor = from;
+  for (let i = 0; i < count; i += 1) {
+    cursor = addWeekdays(cursor, 1);
+    days.push(cursor);
+  }
+  return days;
+}
+
+/** The Monday of the week `key` falls in. Weeks run Monday to Sunday. */
+export function weekStart(key: DateKey): DateKey {
+  const weekday = fromDateKey(key).getDay(); // 0 = Sunday
+  return addDays(key, weekday === 0 ? -6 : 1 - weekday);
+}
+
 /** Long human form, e.g. `July 21`. Used in plain, factual history copy. */
 export function formatDayLabel(key: DateKey): string {
   return fromDateKey(key).toLocaleDateString(undefined, {

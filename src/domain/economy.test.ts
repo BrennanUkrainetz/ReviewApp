@@ -28,14 +28,18 @@ describe('the building ladder', () => {
     expect([...costs].sort((a, b) => a - b)).toEqual(costs);
   });
 
-  it('keeps every tier on the same payback period, so none is a trap', () => {
-    // The balance note in config/shop.ts promises ~2.5 review days to break
-    // even. A tier that drifted far off that would either be an obvious skip
-    // or an obvious dominant buy.
-    for (const def of BUILDINGS) {
-      const payback = def.baseCost / def.incomePerLevel;
-      expect(payback).toBeGreaterThan(2);
-      expect(payback).toBeLessThan(3.2);
+  it('makes each tier a steady step less efficient than the one below', () => {
+    // The balance note in config/shop.ts: raw payback starts near six days and
+    // grows ~1.3× per tier, so the city's rising multipliers are absorbed by
+    // the ladder instead of compounding into a runaway. A tier that broke the
+    // step would be an obvious skip or an obvious dominant buy.
+    const paybacks = BUILDINGS.map((def) => def.baseCost / def.incomePerLevel);
+    expect(paybacks[0]).toBeGreaterThan(5);
+    expect(paybacks[0]).toBeLessThan(7);
+    for (let i = 1; i < paybacks.length; i += 1) {
+      const step = paybacks[i]! / paybacks[i - 1]!;
+      expect(step, BUILDINGS[i]!.id).toBeGreaterThan(1.2);
+      expect(step, BUILDINGS[i]!.id).toBeLessThan(1.4);
     }
   });
 
@@ -123,20 +127,22 @@ describe('milestoneMultiplier', () => {
   // made every tier below the frontier a trap rather than a choice.
   it('keeps a deeply levelled building inside a sane payback', () => {
     const deep: OwnedBuilding[] = [{ id: 'greenhouse', level: 66 }];
-    expect(paybackDays(greenhouse, deep)).toBeLessThan(60);
+    expect(paybackDays(greenhouse, deep)).toBeLessThan(120);
   });
 });
 
 describe('payback', () => {
-  // Payback is a function of level, near enough identically for every tier —
-  // this is what stops any building being dominated by another, and what the
-  // shop's "only cheap while it is low" copy is claiming.
-  it('is near enough the same for every tier at the same level', () => {
+  // At any given level, each tier pays back a steady step slower than the one
+  // below it — never wildly, so no tier is dominated, but enough that city-wide
+  // multipliers cannot shrink the whole ladder to nothing at once.
+  it('steps up by tier, by about the same factor at every level', () => {
     for (const level of [0, 25, 50, 100]) {
-      const days = BUILDINGS.map((def) =>
-        paybackDays(def, [{ id: def.id, level }]),
-      ).filter(Number.isFinite);
-      expect(Math.max(...days) / Math.min(...days)).toBeLessThan(1.2);
+      const days = BUILDINGS.map((def) => paybackDays(def, [{ id: def.id, level }]));
+      for (let i = 1; i < days.length; i += 1) {
+        const step = days[i]! / days[i - 1]!;
+        expect(step, `${BUILDINGS[i]!.id} @${level}`).toBeGreaterThan(1.1);
+        expect(step, `${BUILDINGS[i]!.id} @${level}`).toBeLessThan(1.45);
+      }
     }
   });
 
@@ -240,9 +246,10 @@ describe('marginalOutput', () => {
   it('never quotes levels past the cap', () => {
     const capped: OwnedBuilding[] = [{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }];
     expect(marginalOutput(greenhouse, capped, 10)).toBe(0);
-    expect(marginalOutput(greenhouse, [{ id: 'greenhouse', level: 195 }], 10)).toBe(
+    const near = BUILDING_MAX_LEVEL - 5;
+    expect(marginalOutput(greenhouse, [{ id: 'greenhouse', level: near }], 10)).toBe(
       cityOutput([{ id: 'greenhouse', level: BUILDING_MAX_LEVEL }]) -
-        cityOutput([{ id: 'greenhouse', level: 195 }]),
+        cityOutput([{ id: 'greenhouse', level: near }]),
     );
   });
 });

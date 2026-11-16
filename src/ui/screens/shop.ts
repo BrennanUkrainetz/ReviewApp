@@ -4,8 +4,9 @@
  * Transactions are instant and there is nothing irreversible to confirm —
  * buying is the whole interaction, so it should cost one click.
  */
-import { nextLockedPage } from '@/config/islands';
+import { islandUnlockAscension, nextLockedPage } from '@/config/islands';
 import {
+  BUILDINGS,
   COSMETICS,
   type BuildingDef,
   type CosmeticDef,
@@ -165,7 +166,9 @@ export function createShopScreen(ctx: AppContext): Screen {
         ? el(
             'span',
             { class: 'shop-card__range' },
-            steps > 0 ? ` · next at level ${upcoming}` : ` — first step at level ${upcoming}`,
+            steps > 0
+              ? ` · next at level ${upcoming}`
+              : ` — first step at level ${upcoming}`,
           )
         : null,
     );
@@ -257,36 +260,36 @@ export function createShopScreen(ctx: AppContext): Screen {
             `Held at the charter's ceiling of ${ceiling}`,
           )
         : el(
-          'button',
-          {
-            class: ['btn', affordable ? 'btn--buy' : 'btn--secondary', 'btn--block'],
-            attrs: { type: 'button', disabled: !affordable },
-            on: {
-              click: () => {
-                const result = buyBuilding(ctx.store, def.id, amount);
-                if (!result.ok) {
-                  ctx.toast(result.reason);
-                } else if (level === 0) {
-                  ctx.toast(
-                    result.levels === 1
-                      ? `${def.name} built.`
-                      : `${def.name} built to level ${result.newLevel}.`,
-                  );
-                } else {
-                  ctx.toast(
-                    `${def.name} · ${plural(result.levels, 'level')} → ${result.newLevel}.`,
-                  );
-                }
+            'button',
+            {
+              class: ['btn', affordable ? 'btn--buy' : 'btn--secondary', 'btn--block'],
+              attrs: { type: 'button', disabled: !affordable },
+              on: {
+                click: () => {
+                  const result = buyBuilding(ctx.store, def.id, amount);
+                  if (!result.ok) {
+                    ctx.toast(result.reason);
+                  } else if (level === 0) {
+                    ctx.toast(
+                      result.levels === 1
+                        ? `${def.name} built.`
+                        : `${def.name} built to level ${result.newLevel}.`,
+                    );
+                  } else {
+                    ctx.toast(
+                      `${def.name} · ${plural(result.levels, 'level')} → ${result.newLevel}.`,
+                    );
+                  }
+                },
               },
             },
-          },
-          el(
-            'span',
-            { class: 'shop-card__price' },
-            el('span', { class: 'num' }, formatBig(cost)),
-          ),
-          level === 0 ? 'Build' : `Upgrade ×${quoted}`,
-        );
+            el(
+              'span',
+              { class: 'shop-card__price' },
+              el('span', { class: 'num' }, formatBig(cost)),
+            ),
+            level === 0 ? 'Build' : `Upgrade ×${quoted}`,
+          );
 
     // The total for the whole purchase, not one level times the count: a ×10
     // that crosses a milestone is worth more than ten single levels, and that
@@ -400,17 +403,19 @@ export function createShopScreen(ctx: AppContext): Screen {
    * since watching `standing` climb toward `kinds` is what makes the next
    * charter feel like something to aim at rather than a wall.
    */
-  function charterCard(progress: CharterProgress): HTMLElement {
+  function charterCard(progress: CharterProgress, ascensions: number): HTMLElement {
     const { level, ceiling, output, next, requirement, standing, cost, met, affordable } =
       progress;
+    // The upper charters ask for more kinds than the home cluster holds. Say so
+    // outright, or the card reads as a wall with no door in it.
+    const reachable = BUILDINGS.filter(
+      (def) => islandUnlockAscension(def.island) <= ascensions,
+    ).length;
+    const beyondReach = requirement !== null && requirement.kinds > reachable;
 
     const action =
       next === null || requirement === null
-        ? el(
-            'span',
-            { class: 'shop-card__owned' },
-            'Chartered as broadly as it goes',
-          )
+        ? el('span', { class: 'shop-card__owned' }, 'Chartered as broadly as it goes')
         : el(
             'button',
             {
@@ -460,19 +465,19 @@ export function createShopScreen(ctx: AppContext): Screen {
         ? el(
             'p',
             {
-              class: [
-                'shop-card__requirement',
-                met && 'shop-card__requirement--met',
-              ],
+              class: ['shop-card__requirement', met && 'shop-card__requirement--met'],
             },
             met ? 'Ready: ' : 'Needs ',
             el('span', { class: 'num' }, String(requirement.kinds)),
             ` kinds of building at level ${requirement.atLevel} `,
-            el(
-              'span',
-              { class: 'shop-card__range' },
-              `· ${standing} standing`,
-            ),
+            el('span', { class: 'shop-card__range' }, `· ${standing} standing`),
+          )
+        : null,
+      beyondReach
+        ? el(
+            'p',
+            { class: 'shop-card__bonus' },
+            `Only ${reachable} kinds stand at this altitude — ascend to build on the next island.`,
           )
         : null,
       action,
@@ -550,7 +555,7 @@ export function createShopScreen(ctx: AppContext): Screen {
     const charter = charterOutputMultiplier(state.city.charter);
     if (charter > 1) parts.push(`${formatMultiplier(charter)} from the city charter`);
 
-    const perks = modsFromPerks(state.ascension.perks).output;
+    const perks = modsFromPerks(state.ascension.perkRanks).output;
     if (perks > 1) parts.push(`${formatMultiplier(perks)} from ascension perks`);
 
     const achievements = achievementMultiplier(state.achievements);
@@ -594,7 +599,7 @@ export function createShopScreen(ctx: AppContext): Screen {
         el(
           'p',
           { class: 'shop__note' },
-          'What a level costs depends on how high the building already is, not on which building it is — so a tier is only cheap while it is low.',
+          'Every level costs more than the last, and each tier pays back a little slower than the one below it — so the best buy moves around as the city grows.',
         ),
       );
       replaceChildren(amountRail, ...BUY_AMOUNTS.map(amountButton));
@@ -615,12 +620,11 @@ export function createShopScreen(ctx: AppContext): Screen {
       const progress = charterProgress(
         state.city.buildings,
         state.city.charter,
-        output,
         state.currency.lumen,
       );
       replaceChildren(
         grid,
-        charterCard(progress),
+        charterCard(progress, state.ascension.count),
         ...shown.map((def) => buildingCard(def, state, mods, best)),
         lockedLine(state),
       );

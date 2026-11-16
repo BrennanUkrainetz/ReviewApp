@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { totalAetherFor } from '@/domain/ascension';
 import { migrate } from './migrations';
 import {
   loadState,
@@ -45,7 +46,7 @@ describe('storage', () => {
   it('round-trips a save', () => {
     const state = {
       ...createInitialState(),
-      currency: { lumen: 1240, runLumen: 1240, lifetimeLumen: 1240 , cinder: 0},
+      currency: { lumen: 1240, runLumen: 1240, lifetimeLumen: 1240, cinder: 0 },
     };
     saveState(state);
     expect(map.has(STORAGE_KEY)).toBe(true);
@@ -60,7 +61,7 @@ describe('storage', () => {
   it('clears the save on reset', () => {
     saveState({
       ...createInitialState(),
-      currency: { lumen: 99, runLumen: 99, lifetimeLumen: 99 , cinder: 0},
+      currency: { lumen: 99, runLumen: 99, lifetimeLumen: 99, cinder: 0 },
     });
     expectFresh(resetState());
     expect(map.has(STORAGE_KEY)).toBe(false);
@@ -70,7 +71,7 @@ describe('storage', () => {
 describe('migrate', () => {
   it('fills in everything missing from a partial save', () => {
     const migrated = migrate({
-      currency: { lumen: 40, runLumen: 40, lifetimeLumen: 40 , cinder: 0},
+      currency: { lumen: 40, runLumen: 40, lifetimeLumen: 40, cinder: 0 },
     });
     expect(migrated.version).toBe(STATE_VERSION);
     expect(migrated.currency.lumen).toBe(40);
@@ -143,7 +144,7 @@ describe('migrate', () => {
   it('gives a save written before editable checklists the shipped defaults', () => {
     const migrated = migrate({
       version: 1,
-      currency: { lumen: 40, runLumen: 40, lifetimeLumen: 40 , cinder: 0},
+      currency: { lumen: 40, runLumen: 40, lifetimeLumen: 40, cinder: 0 },
     });
     expect(migrated.checklists).toEqual(createInitialState().checklists);
   });
@@ -195,5 +196,94 @@ describe('migrate', () => {
     expect(migrated.vault.accruedThrough).toBeGreaterThanOrEqual(before);
     expect(migrated.vault.lumen).toBe(0);
     expect(migrated.vault.lastCollectedAt).toBeNull();
+  });
+
+  // The v10 rebalance: the old Aether curve paid exponentially, and the one-off
+  // perk tree could be cleared by one run. An ascended save is re-based.
+  describe('v10 ascension rebase', () => {
+    const legacy = (patch: Record<string, unknown>) =>
+      migrate({
+        version: 9,
+        currency: { lumen: 0, lifetimeLumen: 1e13 },
+        ascension: { count: 1, ...patch },
+      });
+
+    it('refunds every old perk and re-prices Aether on the new curve', () => {
+      // Old curve at 1e13 owed 464; a save that bought every perk and banked the
+      // rest had been paid all of it.
+      const migrated = legacy({
+        aether: 300,
+        aetherEarned: 500,
+        perks: ['updraft-1', 'updraft-2', 'craft-1'],
+      });
+      expect(migrated.ascension.perkRanks).toEqual({});
+      expect(migrated.ascension.aether).toBe(totalAetherFor(1e13));
+      expect(migrated.ascension.aetherEarned).toBe(totalAetherFor(1e13));
+      expect(migrated.ascension.count).toBe(1);
+    });
+
+    it('keeps the share of the lifetime that had not yet been paid out', () => {
+      // Paid for half of what the old curve owed: half the new total, so the
+      // rest of the run is still there to ascend for.
+      const migrated = legacy({ aether: 232, aetherEarned: 232, perks: [] });
+      expect(migrated.ascension.aetherEarned).toBe(
+        Math.floor(totalAetherFor(1e13) * 0.5),
+      );
+    });
+
+    it('leaves a save that never ascended with nothing banked', () => {
+      const migrated = migrate({
+        version: 9,
+        currency: { lifetimeLumen: 1e13 },
+        ascension: { count: 0, aether: 0, aetherEarned: 0, perks: [] },
+      });
+      expect(migrated.ascension).toEqual({
+        count: 0,
+        aether: 0,
+        aetherEarned: 0,
+        perkRanks: {},
+      });
+    });
+
+    it('reads a current save as it is, clamping ranks to what exists', () => {
+      const migrated = migrate({
+        version: 10,
+        ascension: {
+          count: 2,
+          aether: 7,
+          aetherEarned: 40,
+          perkRanks: { 'ledger-1': 99, 'updraft-4': 12, gone: 3, 'updraft-1': 'x' },
+        },
+      });
+      expect(migrated.ascension).toEqual({
+        count: 2,
+        aether: 7,
+        aetherEarned: 40,
+        perkRanks: { 'ledger-1': 5, 'updraft-4': 12 },
+      });
+    });
+  });
+
+  it('gives a pre-ward save no wards and nothing to mend', () => {
+    const migrated = migrate({ version: 9, streak: { current: 4 } });
+    expect(migrated.streak).toMatchObject({
+      wards: 0,
+      wardsUsed: 0,
+      mendsUsed: 0,
+      broken: null,
+    });
+  });
+
+  it('keeps a broken run only if it is well-formed', () => {
+    const good = migrate({
+      version: 10,
+      streak: {
+        broken: { length: 9, lastActiveDate: '2026-07-17', brokenOn: '2026-07-21' },
+      },
+    });
+    expect(good.streak.broken).toMatchObject({ length: 9, brokenOn: '2026-07-21' });
+    expect(
+      migrate({ version: 10, streak: { broken: { length: 9 } } }).streak.broken,
+    ).toBeNull();
   });
 });

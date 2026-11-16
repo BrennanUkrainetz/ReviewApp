@@ -48,6 +48,10 @@ export interface ResearchMods {
   heatCap: number;
   /** Multiplies what a mote pays. */
   mote: number;
+  /** Extra streak wards that can be held at once. */
+  wardSlots: number;
+  /** Scales what mending a broken run costs. */
+  mendCost: number;
 }
 
 export const NO_RESEARCH: ResearchMods = {
@@ -61,6 +65,8 @@ export const NO_RESEARCH: ResearchMods = {
   cinderFlat: 0,
   heatCap: 0,
   mote: 1,
+  wardSlots: 0,
+  mendCost: 1,
 };
 
 /**
@@ -107,6 +113,12 @@ export function researchModsFrom(owned: readonly string[]): ResearchMods {
         break;
       case 'mote':
         mods.mote *= effect.factor;
+        break;
+      case 'ward-slots':
+        mods.wardSlots += effect.extra;
+        break;
+      case 'mend-cost':
+        mods.mendCost = Math.min(mods.mendCost, effect.factor);
         break;
     }
   }

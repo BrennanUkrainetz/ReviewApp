@@ -16,6 +16,7 @@
  */
 import type { AerieState, DayRecord, Tier } from '@/state/types';
 import { addDays, isWeekend, missedWeekdays, type DateKey } from './dates';
+import { coverOrBreak, expireBroken } from './wards';
 
 /** Reads a day's record out of history, if there is one. */
 export function findDay(history: DayRecord[], date: DateKey): DayRecord | undefined {
@@ -31,21 +32,28 @@ export function emptyDay(date: DateKey): DayRecord {
  * Applies the "a missed weekday breaks the run" rule.
  *
  * Returns the streak state as it should be *now*, given the last day that kept
- * continuity. Safe to call on every app open; it is a no-op when the run is
- * still alive — including all weekend, and on Monday before anything is logged.
+ * continuity. Safe to call on every app open and on a timer; it is a no-op
+ * (same reference back) when the run is still alive — including all weekend,
+ * and on Monday before anything is logged.
+ *
+ * A gap is covered by held wards if there are enough of them; otherwise the
+ * run breaks, and is remembered for a few days so it can be mended. Both live
+ * in `domain/wards.ts`. A remembered run whose mend window has closed is
+ * forgotten here too.
  */
 export function reconcileStreak(state: AerieState, today: DateKey): AerieState {
-  const { lastActiveDate, current } = state.streak;
+  const current = expireBroken(state, today);
+  const { lastActiveDate } = current.streak;
 
-  if (current === 0) return state;
+  if (current.streak.current === 0) return current;
   if (lastActiveDate === null) {
-    return { ...state, streak: { ...state.streak, current: 0 } };
+    return { ...current, streak: { ...current.streak, current: 0 } };
   }
 
   // Today itself doesn't count against the run: it is still open.
-  if (missedWeekdays(lastActiveDate, today) === 0) return state;
+  if (missedWeekdays(lastActiveDate, today) === 0) return current;
 
-  return { ...state, streak: { ...state.streak, current: 0 } };
+  return coverOrBreak(current, today);
 }
 
 /**

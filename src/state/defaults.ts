@@ -7,7 +7,7 @@ import {
 import type { AerieState } from './types';
 
 /** Bumped whenever the persisted shape changes; see `migrations.ts`. */
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 export function createInitialState(now: Date = new Date()): AerieState {
   return {
@@ -19,6 +19,10 @@ export function createInitialState(now: Date = new Date()): AerieState {
       lastCompletedDate: null,
       lastActiveDate: null,
       daysOffUsed: 0,
+      wards: 0,
+      wardsUsed: 0,
+      mendsUsed: 0,
+      broken: null,
     },
     currency: { lumen: 0, runLumen: 0, lifetimeLumen: 0, cinder: 0 },
     history: [],
@@ -29,7 +33,7 @@ export function createInitialState(now: Date = new Date()): AerieState {
       bigInterval: BIG_MILESTONE_INTERVAL,
       totalBigMilestonesHit: 0,
     },
-    ascension: { count: 0, aether: 0, aetherEarned: 0, perks: [] },
+    ascension: { count: 0, aether: 0, aetherEarned: 0, perkRanks: {} },
     achievements: [],
     research: [],
     motes: { date: null, remaining: 0, caught: 0 },

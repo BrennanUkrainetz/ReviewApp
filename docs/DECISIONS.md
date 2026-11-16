@@ -502,3 +502,66 @@ break even, one card carries a `Best buy` badge (the shortest payback that is
 actually affordable at the selected amount), and a line under the grid states
 the rule outright: what a level costs depends on how high the building already
 is, not on which building it is.
+
+## The rebalance: priced against a simulated year, not against arithmetic
+
+Three things were broken, and they were the same mistake three times — a price
+or a payout struck against a number that itself grew without bound.
+
+- **The Hearth Hall's price was three days of current output.** Every Lumen
+  earned toward it raised it, and every building bought to meet its
+  requirement raised it again. It is now fixed per charter: five levels of the
+  newest tier the requirement names, at the height it names.
+- **Aether was a cube root of lifetime Lumen.** Lumen is exponential in time,
+  so any power of it is too — two months paid ~500 Aether against a tree that
+  cost ~200. It is now `2 × (log10(lifetime) − 7) ^ 1.5`: about ten for a first
+  ascension around week seven, about seventy for a city a million times richer.
+- **A good day paid ~8–10 days of city output** — vault at 1.7× (the work-hour
+  speed-up was added on top of a per-wall-clock-second rate), reviews at 0.4×
+  each, motes at 0.15× each, contracts struck against review *plus* output,
+  heat up to ×3 on all of it. The ladder was priced for about one. Every source
+  is now scaled so a good day is ~2–3× output.
+
+Fixing income was not enough on its own: every city-wide multiplier (charter,
+district, achievements, synergies, specialties, perks) shortens *every* tier's
+payback at once, so the ladder still accelerated. Each tier now pays back
+~1.3× slower than the one below it (raw payback 6 days at the Greenhouse, ~900
+at the Void Anchor), so rising multipliers are absorbed by the ladder instead of
+compounding into a runaway. This replaces "payback depends on level, not tier".
+
+Perks are ranked with rising costs (one, High Current, is uncapped), and the
+charter runs to 16 with levels to 400 — charters past 11 need more kinds than
+the home cluster has, so the upper half is climbed on the high islands.
+Specialties stop at five steps; the scene draws levels past 200 at 200.
+
+All of it was tuned with `npm run sim` (`scripts/sim/`), which plays a diligent
+player forward through the real actions. That player now takes its first
+ascension around week 7, reaches charter 8 around week 25, and is still climbing
+charter 15 at the end of a year. Old saves that had ascended get every perk
+refunded and their Aether recomputed on the new curve (keeping the share of the
+lifetime they had already been paid).
+
+## Wards and mending make a missed day recoverable, for a price
+
+A missed weekday used to cost the whole run, with no recourse. A **ward**
+(25 Cinder, one held to start) is spent automatically on the next gap it can
+fully cover; a **mend** restores a broken run within three weekdays, for Cinder
+or Aether, scaled by days missed and the run's length. Both work by writing the
+covered days into history as warded days off — so the streak, heat and
+achievements needed no new code path to honour them. The free "Take a day off"
+button is unchanged: wards are for the day you *forget*.
+
+Found on the way: a broken streak never reset the milestone thresholds, so a
+run that broke at 23 saw no chest until 25 and no lunch until 40. It now starts
+over at 5 and 20, and a mend restores the thresholds the run had. The day check
+also runs on the vault timer now, not only on load, so a tab left open overnight
+notices a missed day.
+
+## Weekly expeditions and the kiln are there so a good week always counts
+
+An expedition is the contract at week scale — one rotating goal, derived from
+history, paying Cinder plus a day of city output on the review that lands it.
+The kiln burns 100 Cinder into one Aether, so Cinder earned after the Workshop
+is bought out is never wasted; kiln Aether does not count toward what an
+ascension has paid, so it never shrinks a grant.
+

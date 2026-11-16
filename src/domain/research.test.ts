@@ -52,15 +52,22 @@ describe('researchModsFrom', () => {
   });
 
   it('stacks rate multipliers', () => {
-    // draught-1 (1.3×) and draught-2 (1.6×) compound.
-    expect(researchModsFrom(['draught-1', 'draught-2']).vaultRate).toBeCloseTo(1.3 * 1.6);
+    // draught-1 (1.15×) and draught-2 (1.25×) compound.
+    expect(researchModsFrom(['draught-1', 'draught-2']).vaultRate).toBeCloseTo(
+      1.15 * 1.25,
+    );
   });
 
   it('replaces the work and idle rates with the best owned', () => {
-    expect(researchModsFrom(['shift-1']).workRate).toBe(4);
-    expect(researchModsFrom(['shift-1', 'shift-2']).workRate).toBe(5);
+    expect(researchModsFrom(['shift-1']).workRate).toBe(3.5);
+    expect(researchModsFrom(['shift-1', 'shift-2']).workRate).toBe(4);
     expect(researchModsFrom(['standing-1']).idleShare).toBe(0.25);
     expect(researchModsFrom(['standing-1', 'standing-2']).idleShare).toBe(0.4);
+  });
+
+  it('adds ward slots and takes the best mend discount', () => {
+    expect(researchModsFrom(['watch-1', 'watch-2']).wardSlots).toBe(2);
+    expect(researchModsFrom(['mending']).mendCost).toBe(0.5);
   });
 
   it('ignores ids that no longer exist', () => {
@@ -109,25 +116,39 @@ describe('cinderFor', () => {
 
   it('is multiplied by the Cinder research', () => {
     const mods = researchModsFrom(['hot-1']); // 1.5×
-    expect(cinderFor('full', false, 0, mods)).toBe(Math.round(CINDER_PER_FULL_CLEAR * 1.5));
+    expect(cinderFor('full', false, 0, mods)).toBe(
+      Math.round(CINDER_PER_FULL_CLEAR * 1.5),
+    );
   });
 });
 
 describe('researchStatus', () => {
   it('reports owned, available, unaffordable and locked', () => {
-    expect(researchStatus(RESEARCH.find((r) => r.id === 'deep-1')!, withResearch(['deep-1']))).toBe(
-      'owned',
-    );
-    expect(researchStatus(RESEARCH.find((r) => r.id === 'deep-1')!, withResearch([], 10))).toBe(
-      'available',
-    );
-    expect(researchStatus(RESEARCH.find((r) => r.id === 'deep-1')!, withResearch([], 0))).toBe(
-      'unaffordable',
-    );
+    expect(
+      researchStatus(
+        RESEARCH.find((r) => r.id === 'deep-1')!,
+        withResearch(['deep-1']),
+      ),
+    ).toBe('owned');
+    expect(
+      researchStatus(
+        RESEARCH.find((r) => r.id === 'deep-1')!,
+        withResearch([], 10),
+      ),
+    ).toBe('available');
+    expect(
+      researchStatus(
+        RESEARCH.find((r) => r.id === 'deep-1')!,
+        withResearch([], 0),
+      ),
+    ).toBe('unaffordable');
     // deep-2 needs deep-1 first.
-    expect(researchStatus(RESEARCH.find((r) => r.id === 'deep-2')!, withResearch([], 9999))).toBe(
-      'locked',
-    );
+    expect(
+      researchStatus(
+        RESEARCH.find((r) => r.id === 'deep-2')!,
+        withResearch([], 9999),
+      ),
+    ).toBe('locked');
   });
 
   it('offers the cheapest reachable node as next', () => {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDINGS, getBuilding } from '@/config/shop';
-import { BUILDING_MAX_LEVEL, SPECIALTY_INTERVAL } from '@/config/tuning';
+import {
+  BUILDING_MAX_LEVEL,
+  SPECIALTY_INTERVAL,
+  SPECIALTY_MAX_STEPS,
+} from '@/config/tuning';
 import type { OwnedBuilding } from '@/state/types';
 import { NO_MODS } from './ascension';
 import {
@@ -48,9 +52,16 @@ describe('steps', () => {
     expect(specialtySteps(0)).toBe(0);
     expect(specialtySteps(SPECIALTY_INTERVAL - 1)).toBe(0);
     expect(specialtySteps(SPECIALTY_INTERVAL)).toBe(1);
-    expect(specialtySteps(BUILDING_MAX_LEVEL)).toBe(
-      BUILDING_MAX_LEVEL / SPECIALTY_INTERVAL,
+    expect(specialtySteps(SPECIALTY_INTERVAL * SPECIALTY_MAX_STEPS)).toBe(
+      SPECIALTY_MAX_STEPS,
     );
+  });
+
+  // Levels run to 400 but specialties stop at five steps: they are the reason
+  // to prefer one tier, not a second growth curve.
+  it('stops at the last step, however high the building goes', () => {
+    expect(specialtySteps(BUILDING_MAX_LEVEL)).toBe(SPECIALTY_MAX_STEPS);
+    expect(nextSpecialtyLevel(SPECIALTY_INTERVAL * SPECIALTY_MAX_STEPS)).toBeNull();
   });
 
   it('points at the next step until the last one is passed', () => {

@@ -12,24 +12,24 @@
  * costs `BUILDING_COST_GROWTH` more than the last, and every tenth level
  * doubles what it pays.
  *
- * `baseCost / incomePerLevel` is held near **2.5** across the ladder: a fresh
- * level pays for itself in about two and a half review days. Reinvesting each
- * day's Lumen therefore compounds at roughly 1.3–1.5× per day, which lands the
- * twelfth tier (tens of trillions) around two months of daily use. Those two
- * numbers — the 13× spacing and the 2.5 payback — are the whole balance; keep
- * them roughly true and new tiers slot in without retuning anything else.
+ * `baseCost / incomePerLevel` — raw payback, in days of the building's own
+ * output — is **6** at the Greenhouse and grows **~1.3× per tier** (so each
+ * tier pays ~10× the one below while costing ~13×). It used to be a flat 2.5
+ * for every tier, which only held while nothing else in the city multiplied
+ * output. Every city-wide multiplier — charter, district, achievements,
+ * synergies, perks — shortens *every* tier's payback at once, so a flat ladder
+ * accelerated as the game went on and a diligent player cleared it in a month.
+ * The per-tier step absorbs those multipliers instead: the frontier always
+ * pays back in days, never in hours. `npm run sim` is how this was tuned.
  *
- * Note what that 2.5 does *not* depend on: which tier it is. Payback is a
- * function of **level**, near enough identically for all twenty tiers, so no
- * building is ever dominated by another — only by its own height. That is why
- * `BUILDING_MILESTONE_INTERVAL` is the number that matters most in this file's
- * neighbourhood, and why it is ten rather than the six scattered thresholds it
- * used to be: at the old spacing income grew ×64 across the range while cost
- * grew a billionfold, so every building below the frontier was a trap.
+ * Within a tier, payback is set by **level**: cost grows 1.11× a level while
+ * output doubles every ten. That is why `BUILDING_MILESTONE_INTERVAL` still
+ * matters most in this file's neighbourhood — at the old six scattered
+ * thresholds, every building below the frontier was a trap.
  *
  * ## Why you would buy one tier over another
  *
- * Since Lumen payback barely distinguishes them, something else has to. Each
+ * Since payback only nudges between neighbouring tiers, something else has to. Each
  * tier carries a **specialty**: one thing it improves that no other tier on the
  * home cluster touches — the Greenhouse pays Cinder, the Windmill fills the
  * vault faster, the Foundry holds heat longer. Those advance every
@@ -158,7 +158,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'greenhouse',
     name: 'Greenhouse',
     flavor: 'Warm glass, cold altitude. Somehow the tomatoes manage.',
-    incomePerLevel: 8,
+    incomePerLevel: 3.3,
     baseCost: 20,
     island: 'main',
     slot: 0,
@@ -168,18 +168,18 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'windmill',
     name: 'Windmill',
     flavor: 'There is never a shortage of wind up here.',
-    incomePerLevel: 100,
+    incomePerLevel: 33,
     baseCost: 260,
     island: 'west',
     slot: 0,
     synergy: { from: 'greenhouse', perLevel: 0.01 },
-    specialty: { kind: 'vault-rate', perStep: 1.1, label: 'vault fill rate' },
+    specialty: { kind: 'vault-rate', perStep: 1.06, label: 'vault fill rate' },
   },
   {
     id: 'market-stall',
     name: 'Market Stall',
     flavor: 'Trades with the ground twice a week, weather permitting.',
-    incomePerLevel: 1_300,
+    incomePerLevel: 340,
     baseCost: 3_400,
     island: 'main',
     slot: 1,
@@ -190,7 +190,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'lighthouse',
     name: 'Lighthouse',
     flavor: 'Marks the edge of the cloud shelf. Visible for miles.',
-    incomePerLevel: 17_000,
+    incomePerLevel: 3400,
     baseCost: 45_000,
     island: 'east',
     slot: 0,
@@ -200,7 +200,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'observatory',
     name: 'Observatory',
     flavor: 'Points away from the ground, mostly.',
-    incomePerLevel: 225_000,
+    incomePerLevel: 34_000,
     baseCost: 580_000,
     island: 'east',
     slot: 1,
@@ -211,7 +211,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'foundry',
     name: 'Foundry',
     flavor: 'Runs hot enough that the frost never settles on its roof.',
-    incomePerLevel: 2_900_000,
+    incomePerLevel: 340_000,
     baseCost: 7_500_000,
     island: 'west',
     slot: 1,
@@ -221,7 +221,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'aviary',
     name: 'Aviary',
     flavor: 'Half the birds were born up here and have never landed.',
-    incomePerLevel: 38_000_000,
+    incomePerLevel: 3_400_000,
     baseCost: 98_000_000,
     island: 'main',
     slot: 2,
@@ -232,7 +232,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'cloudloom',
     name: 'Cloudloom',
     flavor: 'Spins the cloud shelf into something you can fold and sell.',
-    incomePerLevel: 500_000_000,
+    incomePerLevel: 35_000_000,
     baseCost: 1_300_000_000,
     island: 'west',
     slot: 2,
@@ -243,7 +243,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'skydock',
     name: 'Skydock',
     flavor: 'Everything that arrives, arrives here first.',
-    incomePerLevel: 6_500_000_000,
+    incomePerLevel: 350_000_000,
     baseCost: 17_000_000_000,
     island: 'east',
     slot: 2,
@@ -258,7 +258,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'aether-well',
     name: 'Aether Well',
     flavor: 'Drilled upward. Nobody has found the far end of it.',
-    incomePerLevel: 85_000_000_000,
+    incomePerLevel: 3_500_000_000,
     baseCost: 220_000_000_000,
     island: 'main',
     slot: 3,
@@ -268,7 +268,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'starforge',
     name: 'Starforge',
     flavor: 'Makes light the hard way, and sells the surplus.',
-    incomePerLevel: 1_100_000_000_000,
+    incomePerLevel: 35_000_000_000,
     baseCost: 2_900_000_000_000,
     island: 'west',
     slot: 3,
@@ -279,7 +279,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'anchor-spire',
     name: 'Anchor Spire',
     flavor: 'Holds the whole cluster in place. Or so the plaque claims.',
-    incomePerLevel: 15_000_000_000_000,
+    incomePerLevel: 350_000_000_000,
     baseCost: 38_000_000_000_000,
     island: 'east',
     slot: 3,
@@ -292,7 +292,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'stormspire',
     name: 'Stormspire',
     flavor: 'Draws the weather up here to it, and keeps the change.',
-    incomePerLevel: 2.0e14,
+    incomePerLevel: 3_600_000_000_000,
     baseCost: 5.0e14,
     island: 'cirrus',
     slot: 0,
@@ -303,18 +303,18 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'frostworks',
     name: 'Frostworks',
     flavor: 'Cuts the cirrus into panes and ships them south.',
-    incomePerLevel: 2.6e15,
+    incomePerLevel: 36_000_000_000_000,
     baseCost: 6.6e15,
     island: 'cirrus',
     slot: 1,
     synergy: { from: 'foundry', perLevel: 0.03 },
-    specialty: { kind: 'cinder', perStep: 1.15, label: 'Cinder earned' },
+    specialty: { kind: 'cinder', perStep: 1.08, label: 'Cinder earned' },
   },
   {
     id: 'heliostat',
     name: 'Heliostat Array',
     flavor: 'Follows a sun that never sets at this height.',
-    incomePerLevel: 3.4e16,
+    incomePerLevel: 3.6e14,
     baseCost: 8.5e16,
     island: 'stratos',
     slot: 0,
@@ -325,7 +325,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'silent-vault',
     name: 'Silent Vault',
     flavor: 'Above the weather, nothing it stores ever spoils.',
-    incomePerLevel: 4.4e17,
+    incomePerLevel: 3.6e15,
     baseCost: 1.1e18,
     island: 'stratos',
     slot: 1,
@@ -336,7 +336,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'aurora-font',
     name: 'Aurora Font',
     flavor: 'Taps the colour the sky refuses to account for.',
-    incomePerLevel: 5.7e18,
+    incomePerLevel: 3.5e16,
     baseCost: 1.4e19,
     island: 'aurora',
     slot: 0,
@@ -347,7 +347,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'prism-hall',
     name: 'Prism Hall',
     flavor: 'Splits the aurora into something you can weigh and sell.',
-    incomePerLevel: 7.4e19,
+    incomePerLevel: 3.7e17,
     baseCost: 1.9e20,
     island: 'aurora',
     slot: 1,
@@ -358,7 +358,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'starwell',
     name: 'Starwell',
     flavor: 'Drops toward the dark until the stars are underfoot.',
-    incomePerLevel: 9.6e20,
+    incomePerLevel: 3.6e18,
     baseCost: 2.4e21,
     island: 'deepdark',
     slot: 0,
@@ -369,7 +369,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'void-anchor',
     name: 'Void Anchor',
     flavor: 'Holds the whole climb steady against nothing at all.',
-    incomePerLevel: 1.25e22,
+    incomePerLevel: 3.6e19,
     baseCost: 3.2e22,
     island: 'deepdark',
     slot: 1,

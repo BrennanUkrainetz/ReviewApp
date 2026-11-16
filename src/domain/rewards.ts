@@ -67,6 +67,9 @@ export interface Reward {
   /** Bonus for settling the day's contract, and which one it was. */
   contractLumen: number;
   contractId: string | null;
+  /** Bonus for finishing the week's expedition, and which one it was. */
+  weeklyLumen: number;
+  weeklyId: string | null;
   totalLumen: number;
   cosmeticId: string | null;
   milestone: MilestoneHit | null;
@@ -130,6 +133,8 @@ export interface RewardInput {
   heat?: number;
   /** The day's contract, if this review is the one that settled it. */
   contract?: { id: string; bonus: number } | null;
+  /** The week's expedition, if this review is the one that finished it. */
+  weekly?: { id: string; bonus: number } | null;
   milestone: MilestoneHit | null;
   unlockedCosmetics: readonly string[];
   rng?: Rng;
@@ -154,6 +159,7 @@ export function buildReward({
   passiveLumen,
   heat = 1,
   contract = null,
+  weekly = null,
   milestone,
   unlockedCosmetics,
   rng = defaultRng,
@@ -175,6 +181,7 @@ export function buildReward({
   const cosmeticId = rng() < dropChance ? rollCosmetic(unlockedCosmetics, rng) : null;
   const bonusLumen = milestone ? milestoneBonus(milestone.kind, base, mods) : 0;
   const contractLumen = contract?.bonus ?? 0;
+  const weeklyLumen = weekly?.bonus ?? 0;
 
   return {
     chest,
@@ -184,7 +191,9 @@ export function buildReward({
     bonusLumen,
     contractLumen,
     contractId: contract?.id ?? null,
-    totalLumen: heatedReview + bonusLumen + contractLumen,
+    weeklyLumen,
+    weeklyId: weekly?.id ?? null,
+    totalLumen: heatedReview + bonusLumen + contractLumen + weeklyLumen,
     cosmeticId,
     milestone,
   };

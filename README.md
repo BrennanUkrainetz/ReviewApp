@@ -31,23 +31,29 @@ the streak.
 
 The Lumen curve is exponential and meant to be played for months.
 
-- **Twelve building tiers**, each costing and paying roughly 13× the one below,
-  from a 20-Lumen Greenhouse to a 38-trillion Anchor Spire. Levels are
-  effectively uncapped, a building's output **doubles** at levels 10/25/50/100,
-  and several feed **synergy** bonuses into their neighbours. The shop buys in
-  ×1 / ×10 / Max.
-- **Heat** — consecutive full-clear weekdays multiply everything, up to ×3. A
-  floor pass keeps the streak but not the combo.
-- **A daily contract** — one rotating objective, fixed for the calendar day,
-  paying a share of the day's payout when it lands.
+- **Twenty building tiers**, twelve on the home cluster and eight on the high
+  islands. Each costs ~13× the one below and pays back ~1.3× slower, a
+  building's output doubles every 10 levels, and several feed **synergy**
+  bonuses into their neighbours. The shop buys in ×1 / ×10 / Max.
+- **The Hearth Hall charter** caps how high any building may go. Raising it
+  asks for breadth (one more kind of building at the last ceiling) and a fixed
+  Lumen price. Sixteen charters run the cap to level 400; the upper ones need
+  buildings from the high islands.
+- **Heat** — consecutive full-clear weekdays multiply the day's review, contract
+  and chest bonuses, up to ×2. A floor pass keeps the streak but not the combo.
+- **A daily contract** and a **weekly expedition** — rotating objectives that
+  pay a share of the city's output (and, for the expedition, Cinder).
 - **Motes** — a few catchable Lumen bursts that appear over the city _after_ a
   review, and expire with the day.
-- **Achievements** — 32 badges, each adding 1% to every Lumen source, forever.
-- **Ascension** — once a run has earned enough, the city can climb into a new
-  altitude band: buildings and Lumen reset, and the run pays out **Aether** for
-  a permanent 20-node perk tree. **Your streak, history, and cosmetics are never
-  reset** — those record what actually happened, and no game mechanic touches
-  them.
+- **Streak wards and mending** — a ward (bought with Cinder) covers a missed
+  weekday automatically; a broken run can be mended for a few days afterwards
+  with Cinder or Aether.
+- **Achievements** — each adds 1% to every Lumen source, forever.
+- **Ascension** — buildings and Lumen reset, the city climbs an altitude band,
+  and the run pays **Aether** for a ranked perk tree (one perk is uncapped).
+  **Your streak, history, and cosmetics are never reset.**
+- **The Workshop** spends **Cinder** (earned only by full clears) on research,
+  and its kiln turns spare Cinder into Aether.
 
 The whole thing stays gated behind the routine: the city only pays on days a
 review is completed, which is what makes it safe for the curve to be this
@@ -73,6 +79,7 @@ npm run dev      # http://localhost:5273
 | `npm run lint`       | ESLint over the project                           |
 | `npm run format`     | Prettier write                                    |
 | `npm run check`      | Typecheck + lint + tests — run this before commit |
+| `npm run sim`        | Balance simulator: a year of diligent play, logged per week to `sim-output.txt` (`SIM_DAYS`, `SIM_ASCEND=0`) |
 
 ## Architecture
 
@@ -121,12 +128,16 @@ achievement bonus.
 
 The _ladder_ itself lives in `src/config/shop.ts`, and the note at the top of
 that file is the one worth reading before retuning: the whole balance rests on
-two numbers — **13× spacing** between tiers and a **~2.5 review-day payback**
-per level. `economy.test.ts` asserts the payback ratio holds across every tier,
-so a retune that quietly turns one tier into a trap fails the suite.
+three numbers — **13× cost spacing** between tiers, a **~6 review-day raw
+payback** at the bottom, and payback growing **~1.3× per tier**.
+`economy.test.ts` asserts that step holds across every tier, so a retune that
+quietly turns one tier into a trap fails the suite.
 
-The prestige curve is in `src/config/ascension.ts` (a cube root of lifetime
-Lumen), and the perk tree it feeds is in `src/config/perks.ts`.
+The prestige curve is in `src/config/ascension.ts` (logarithmic in lifetime
+Lumen), and the ranked perk tree it feeds is in `src/config/perks.ts`. Before
+committing a retune, run `npm run sim` and read the week-by-week log — it plays
+a diligent player through a year using the real actions, which is how the
+current numbers were set.
 
 ## Dependencies
 
